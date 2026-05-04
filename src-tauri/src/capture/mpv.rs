@@ -167,8 +167,8 @@ impl CaptureBackend for MpvBackend {
             .arg(format!("--input-ipc-server={socket_path}"))
             .arg(&cfg.video_device)
             .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit());
 
         tracing::info!(?cfg, %socket_path, "spawning mpv");
         let child = cmd.spawn().map_err(|e| {
