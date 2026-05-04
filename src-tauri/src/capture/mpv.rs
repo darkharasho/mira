@@ -122,6 +122,13 @@ impl CaptureBackend for MpvBackend {
                 ("demuxer-lavf-probesize", "32"),
                 ("demuxer-lavf-analyzeduration", "0"),
                 ("title", "Elgato Capture"),
+                // Force the legacy GL backend. The default `gpu-next` /
+                // libplacebo Vulkan path on Wayland tries dmabuf imports
+                // which conflict with Tauri's WebKitGTK already holding
+                // Wayland GPU resources in this process. The script works
+                // because it doesn't share a process with a webview.
+                ("vo", "gpu"),
+                ("gpu-api", "opengl"),
             ] {
                 tracing::debug!(prop = k, val = v, "pre-init option");
                 init.set_property(k, v.to_string()).map_err(|e| {
@@ -148,14 +155,15 @@ impl CaptureBackend for MpvBackend {
         mpv.set_property("mute", if cfg.muted { "yes" } else { "no" }.to_string())
             .map_err(Self::ctx("set mute"))?;
 
-        // Attach the ALSA capture device as an audio source for the next
-        // loadfile. The `audio-files` property is a list and is read by
-        // the next file load. Setting it before loadfile mirrors what
-        // --audio-file=... does on the CLI.
+        // Attach the ALSA capture device as an audio source. `audio-files`
+        // is a list-typed property — setting it via set_property splits
+        // the value on commas, which mangles av://alsa:hw:N,M into two
+        // bogus paths. The `change-list` command treats the value as one
+        // opaque string and avoids the splitting.
         let audio_url = format!("av://alsa:{}", cfg.audio_device);
-        tracing::info!(audio = %audio_url, "audio-files");
-        mpv.set_property("audio-files", audio_url.clone())
-            .map_err(Self::ctx("set audio-files"))?;
+        tracing::info!(audio = %audio_url, "change-list audio-files add");
+        mpv.command("change-list", &["audio-files", "add", &audio_url])
+            .map_err(Self::ctx("change-list audio-files"))?;
 
         // Begin playback of the V4L2 device — three-arg form for older
         // mpv compatibility (no `index` parameter).
