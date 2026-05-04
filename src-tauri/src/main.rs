@@ -7,7 +7,8 @@ mod capture;
 mod commands;
 
 use std::sync::Arc;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
+use crate::capture::CaptureBackend;
 use crate::capture::mpv::MpvBackend;
 use crate::commands::AppState;
 
@@ -93,6 +94,21 @@ fn main() {
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = run_kwin_keepbelow_script().await {
                     tracing::warn!("KWin script failed (non-fatal): {e}");
+                }
+            });
+
+            let backend_for_stats = backend_for_setup.clone();
+            let app_handle_for_stats = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_millis(500));
+                interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                loop {
+                    interval.tick().await;
+                    if backend_for_stats.is_running() {
+                        if let Ok(s) = backend_for_stats.stats() {
+                            let _ = app_handle_for_stats.emit("stream-stats", s);
+                        }
+                    }
                 }
             });
 
