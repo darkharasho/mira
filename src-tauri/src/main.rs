@@ -3,6 +3,7 @@
 
 mod settings;
 mod devices;
+mod hotplug;
 
 fn main() {
     tracing_subscriber::fmt()
@@ -11,6 +12,10 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::default().build())
+        .setup(|app| {
+            crate::hotplug::spawn(app.handle().clone());
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("tauri run failed");
 }
