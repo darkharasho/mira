@@ -24,6 +24,7 @@ anyhow = "1"
 v4l = "0.14"
 alsa = "0.9"
 udev = "0.9"
+raw-window-handle = "0.6"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dirs = "5"

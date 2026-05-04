@@ -24,6 +24,8 @@ struct Running {
 pub struct MpvBackend {
     inner: Mutex<Option<Running>>,
     request_id: AtomicU64,
+    /// Tauri main window's X11 ID. mpv embeds inside this via `--wid`.
+    parent_xid: Mutex<Option<u64>>,
 }
 
 impl MpvBackend {
@@ -31,7 +33,12 @@ impl MpvBackend {
         Self {
             inner: Mutex::new(None),
             request_id: AtomicU64::new(1),
+            parent_xid: Mutex::new(None),
         }
+    }
+
+    pub fn set_parent_xid(&self, xid: u64) {
+        *self.parent_xid.lock().unwrap() = Some(xid);
     }
 
     fn next_id(&self) -> u64 {
@@ -95,33 +102,7 @@ impl Default for MpvBackend {
     }
 }
 
-/// True when the process is running inside a distrobox / podman / toolbox
-/// container. We detect via the container runtime's marker file.
-fn in_container() -> bool {
-    std::path::Path::new("/run/.containerenv").is_file()
-        || std::env::var("container").is_ok()
-}
-
-/// Pick the executable that will run mpv. In a container, defer to
-/// `distrobox-host-exec` so mpv launches on the host — that's where
-/// the user's compositor + GPU live, and where their bash script
-/// already works. Outside containers, just use mpv directly.
-///
-/// Returns `(program, leading_args)` so the caller can append the rest
-/// of mpv's flags.
-fn mpv_command() -> (String, Vec<String>) {
-    if in_container() {
-        if let Some(host_exec) = first_existing(&[
-            "/usr/bin/distrobox-host-exec",
-            "/usr/local/bin/distrobox-host-exec",
-        ]) {
-            return (host_exec, vec!["mpv".into()]);
-        }
-    }
-    (mpv_path_in_path(), Vec::new())
-}
-
-fn mpv_path_in_path() -> String {
+fn mpv_executable() -> String {
     if let Ok(path) = std::env::var("PATH") {
         for dir in path.split(':').filter(|s| !s.is_empty()) {
             let candidate = std::path::Path::new(dir).join("mpv");
@@ -169,14 +150,15 @@ impl CaptureBackend for MpvBackend {
         let socket_path = fresh_socket_path();
         let _ = std::fs::remove_file(&socket_path);
 
-        // Mirror the reference script's CLI exactly. mpv is a self-contained
-        // child process, so its Wayland/GPU connection is independent of
-        // Tauri's webview — no dmabuf-import collisions.
-        let (program, leading_args) = mpv_command();
-        tracing::info!(program = %program, leading = ?leading_args, "spawning mpv subprocess");
+        // mpv runs as a real OS subprocess and embeds into our Tauri
+        // window via the X11-only `--wid` flag (works because Tauri is
+        // forced onto XWayland in main.rs).
+        let parent_xid = *self.parent_xid.lock().unwrap();
+        let program = mpv_executable();
+        tracing::info!(program = %program, ?parent_xid, "spawning mpv subprocess");
         let mut cmd = Command::new(&program);
-        for a in &leading_args {
-            cmd.arg(a);
+        if let Some(xid) = parent_xid {
+            cmd.arg(format!("--wid={xid}"));
         }
         cmd.arg("--profile=low-latency")
             .arg("--no-cache")
