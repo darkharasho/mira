@@ -26,6 +26,13 @@ impl MpvBackend {
     fn map_err<E: std::fmt::Display>(e: E) -> CaptureError {
         CaptureError::Mpv(e.to_string())
     }
+
+    pub fn set_geometry(&self, geometry: &str) -> Result<(), CaptureError> {
+        let guard = self.inner.lock().unwrap();
+        let mpv = guard.as_ref().ok_or(CaptureError::NotStarted)?;
+        mpv.set_property("geometry", geometry.to_string())
+            .map_err(Self::map_err)
+    }
 }
 
 impl Default for MpvBackend {
@@ -62,7 +69,12 @@ impl CaptureBackend for MpvBackend {
                 ("demuxer-lavf-format", "video4linux2"),
                 ("demuxer-lavf-probesize", "32"),
                 ("demuxer-lavf-analyzeduration", "0"),
-                ("title", "Elgato Capture"),
+                ("force-window", "yes"),
+                ("border", "no"),
+                ("title", "elgato-capture-video"),
+                ("idle", "no"),
+                ("input-default-bindings", "no"),
+                ("input-vo-keyboard", "no"),
             ];
             for (k, v) in pairs {
                 init.set_property(k, (*v).to_string())?;

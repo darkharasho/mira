@@ -1,11 +1,12 @@
 use std::sync::Arc;
 use tauri::State;
 use crate::capture::{CaptureBackend, StreamConfig, StreamStats};
+use crate::capture::mpv::MpvBackend;
 use crate::devices::{DeviceList, alsa as alsa_dev, v4l2 as v4l2_dev};
 use crate::settings::Settings;
 
 pub struct AppState {
-    pub backend: Arc<dyn CaptureBackend>,
+    pub backend: Arc<MpvBackend>,
 }
 
 #[tauri::command]

@@ -7,5 +7,5 @@
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-html, body, #root { height: 100%; margin: 0; background: #000; }
+html, body, #root { height: 100%; margin: 0; background: transparent; }
 *, *::before, *::after { box-sizing: border-box; }
