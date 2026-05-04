@@ -1,3 +1,43 @@
+import { useCallback, useMemo, useState } from "react";
+import { useSettings } from "./hooks/useSettings";
+import { StartupScreen } from "./screens/StartupScreen";
+import { ViewerScreen } from "./screens/ViewerScreen";
+import type { Settings } from "./lib/types";
+
 export default function App() {
-  return <div className="grid place-items-center h-full">Elgato Capture booting…</div>;
+  const { settings, update } = useSettings();
+  const [forceStartup, setForceStartup] = useState(false);
+
+  const showStartup = useMemo(() => {
+    if (!settings) return false;
+    if (forceStartup) return true;
+    if (!settings.skip_startup) return true;
+    return !settings.video_device || !settings.audio_device || !settings.pix_fmt;
+  }, [settings, forceStartup]);
+
+  const onStart = useCallback(
+    async (next: Settings) => {
+      await update(next);
+      setForceStartup(false);
+    },
+    [update],
+  );
+
+  if (!settings) {
+    return (
+      <div className="grid place-items-center h-full text-white/50 text-sm">
+        Loading…
+      </div>
+    );
+  }
+
+  return showStartup ? (
+    <StartupScreen initial={settings} onStart={onStart} />
+  ) : (
+    <ViewerScreen
+      settings={settings}
+      onChangeSettings={update}
+      onResetToStartup={() => setForceStartup(true)}
+    />
+  );
 }
