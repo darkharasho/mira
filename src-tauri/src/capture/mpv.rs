@@ -158,7 +158,15 @@ impl CaptureBackend for MpvBackend {
         tracing::info!(program = %program, ?parent_xid, "spawning mpv subprocess");
         let mut cmd = Command::new(&program);
         if let Some(xid) = parent_xid {
-            cmd.arg(format!("--wid={xid}"));
+            cmd.arg(format!("--wid={xid}"))
+                // mpv's `--wid` is X11-only; force the X11 GPU context
+                // (default `auto` prefers Wayland whenever WAYLAND_DISPLAY
+                // is set, which crashes with dmabuf import errors against
+                // an X11-embedded window).
+                .arg("--gpu-context=x11egl");
+            // Belt-and-braces: hide WAYLAND_DISPLAY from the child so any
+            // subsystem that re-checks the env also picks X11.
+            cmd.env_remove("WAYLAND_DISPLAY");
         }
         cmd.arg("--profile=low-latency")
             .arg("--no-cache")
