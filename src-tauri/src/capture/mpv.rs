@@ -95,10 +95,33 @@ impl Default for MpvBackend {
     }
 }
 
-/// Resolve the mpv executable to use. Falls back to common absolute
-/// paths when the inherited `PATH` doesn't contain a hit (Tauri's child
-/// environment can be missing /usr/bin in some sandboxes).
-fn mpv_executable() -> String {
+/// True when the process is running inside a distrobox / podman / toolbox
+/// container. We detect via the container runtime's marker file.
+fn in_container() -> bool {
+    std::path::Path::new("/run/.containerenv").is_file()
+        || std::env::var("container").is_ok()
+}
+
+/// Pick the executable that will run mpv. In a container, defer to
+/// `distrobox-host-exec` so mpv launches on the host — that's where
+/// the user's compositor + GPU live, and where their bash script
+/// already works. Outside containers, just use mpv directly.
+///
+/// Returns `(program, leading_args)` so the caller can append the rest
+/// of mpv's flags.
+fn mpv_command() -> (String, Vec<String>) {
+    if in_container() {
+        if let Some(host_exec) = first_existing(&[
+            "/usr/bin/distrobox-host-exec",
+            "/usr/local/bin/distrobox-host-exec",
+        ]) {
+            return (host_exec, vec!["mpv".into()]);
+        }
+    }
+    (mpv_path_in_path(), Vec::new())
+}
+
+fn mpv_path_in_path() -> String {
     if let Ok(path) = std::env::var("PATH") {
         for dir in path.split(':').filter(|s| !s.is_empty()) {
             let candidate = std::path::Path::new(dir).join("mpv");
@@ -107,12 +130,14 @@ fn mpv_executable() -> String {
             }
         }
     }
-    for fallback in ["/usr/bin/mpv", "/usr/local/bin/mpv"] {
-        if std::path::Path::new(fallback).is_file() {
-            return fallback.into();
-        }
-    }
-    "mpv".into()
+    first_existing(&["/usr/bin/mpv", "/usr/local/bin/mpv"]).unwrap_or_else(|| "mpv".into())
+}
+
+fn first_existing(paths: &[&str]) -> Option<String> {
+    paths
+        .iter()
+        .find(|p| std::path::Path::new(p).is_file())
+        .map(|s| s.to_string())
 }
 
 fn fresh_socket_path() -> String {
@@ -147,9 +172,12 @@ impl CaptureBackend for MpvBackend {
         // Mirror the reference script's CLI exactly. mpv is a self-contained
         // child process, so its Wayland/GPU connection is independent of
         // Tauri's webview — no dmabuf-import collisions.
-        let mpv_path = mpv_executable();
-        tracing::info!(mpv_path = %mpv_path, "spawning mpv subprocess");
-        let mut cmd = Command::new(&mpv_path);
+        let (program, leading_args) = mpv_command();
+        tracing::info!(program = %program, leading = ?leading_args, "spawning mpv subprocess");
+        let mut cmd = Command::new(&program);
+        for a in &leading_args {
+            cmd.arg(a);
+        }
         cmd.arg("--profile=low-latency")
             .arg("--no-cache")
             .arg("--untimed")
