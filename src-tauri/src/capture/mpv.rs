@@ -137,14 +137,11 @@ impl CaptureBackend for MpvBackend {
                     tracing::error!(prop = "demuxer-lavf-o", val = %lavf_opts, ?e, "pre-init option failed");
                     e
                 })?;
-
-            let audio_file = format!("av://alsa:{}", audio_device);
-            tracing::debug!(prop = "audio-file", val = %audio_file, "pre-init option");
-            init.set_property("audio-file", audio_file.clone())
-                .map_err(|e| {
-                    tracing::error!(prop = "audio-file", val = %audio_file, ?e, "pre-init option failed");
-                    e
-                })?;
+            // Note: `audio-file` is option-only — libmpv's pre-init
+            // set_property still goes through mpv_set_property which
+            // returns PROPERTY_NOT_FOUND for it. We attach the audio
+            // track via the runtime `audio-add` command after loadfile.
+            let _ = audio_device;
             Ok(())
         })
         .map_err(Self::ctx("mpv init"))?;
@@ -160,6 +157,13 @@ impl CaptureBackend for MpvBackend {
         tracing::info!(video = %cfg.video_device, "loadfile");
         mpv.command("loadfile", &[&cfg.video_device, "replace"])
             .map_err(Self::ctx("loadfile"))?;
+
+        // Attach the ALSA capture device as an audio track. Must come
+        // after loadfile because audio-add operates on the current file.
+        let audio_url = format!("av://alsa:{}", cfg.audio_device);
+        tracing::info!(audio = %audio_url, "audio-add");
+        mpv.command("audio-add", &[&audio_url, "select"])
+            .map_err(Self::ctx("audio-add"))?;
 
         *guard = Some(mpv);
         tracing::info!("mpv stream started");
