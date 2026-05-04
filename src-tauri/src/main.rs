@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod settings;
+mod devices;
 
 fn main() {
     tracing_subscriber::fmt()
