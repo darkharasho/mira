@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 pub mod mpv;
+pub mod x11_child;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StreamConfig {

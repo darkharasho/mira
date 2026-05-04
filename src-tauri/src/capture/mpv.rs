@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
+use super::x11_child::X11Child;
 use super::{CaptureBackend, CaptureError, StreamConfig, StreamStats};
 
 struct Running {
@@ -24,12 +25,11 @@ struct Running {
 pub struct MpvBackend {
     inner: Mutex<Option<Running>>,
     request_id: AtomicU64,
-    /// Tauri main window's X11 ID. mpv embeds inside this via `--wid`.
-    parent_xid: Mutex<Option<u64>>,
-    /// Pixel rectangle (w, h, x, y) where mpv's video region should
-    /// render inside the Tauri window. Used both as the initial
-    /// `--geometry` and for runtime updates over IPC.
-    region: Mutex<Option<(u32, u32, i32, i32)>>,
+    /// Child X11 window we own and reparent mpv into. mpv ignores
+    /// --geometry under --wid (it just fills its parent), so the only
+    /// way to constrain it to a sub-region of the Tauri window is to
+    /// give it a parent that's exactly the size of the slot.
+    child: Mutex<Option<X11Child>>,
 }
 
 impl MpvBackend {
@@ -37,30 +37,27 @@ impl MpvBackend {
         Self {
             inner: Mutex::new(None),
             request_id: AtomicU64::new(1),
-            parent_xid: Mutex::new(None),
-            region: Mutex::new(None),
+            child: Mutex::new(None),
         }
     }
 
     pub fn set_parent_xid(&self, xid: u64) {
-        *self.parent_xid.lock().unwrap() = Some(xid);
+        let mut guard = self.child.lock().unwrap();
+        if guard.is_some() {
+            return;
+        }
+        match X11Child::create(xid as u32) {
+            Ok(child) => *guard = Some(child),
+            Err(e) => tracing::error!(?e, "failed to create child X11 window"),
+        }
     }
 
-    /// Update the video region inside the parent window. If mpv is
-    /// already running, push the new geometry over IPC; otherwise the
-    /// next start() picks it up via `--geometry`.
+    /// Update the video region inside the parent window. The child X11
+    /// window we own gets resized/repositioned; mpv (embedded inside
+    /// it) follows automatically.
     pub fn set_region(&self, w: u32, h: u32, x: i32, y: i32) {
-        *self.region.lock().unwrap() = Some((w, h, x, y));
-        let socket_path = {
-            let guard = self.inner.lock().unwrap();
-            guard.as_ref().map(|r| r.socket_path.clone())
-        };
-        if let Some(socket_path) = socket_path {
-            let geom = format!("{w}x{h}+{x}+{y}");
-            let _ = self.ipc(
-                &socket_path,
-                json!({"command": ["set_property", "geometry", geom]}),
-            );
+        if let Some(child) = self.child.lock().unwrap().as_ref() {
+            child.set_geometry(w, h, x, y);
         }
     }
 
@@ -173,26 +170,20 @@ impl CaptureBackend for MpvBackend {
         let socket_path = fresh_socket_path();
         let _ = std::fs::remove_file(&socket_path);
 
-        // mpv runs as a real OS subprocess and embeds into our Tauri
-        // window via the X11-only `--wid` flag (works because Tauri is
-        // forced onto XWayland in main.rs).
-        let parent_xid = *self.parent_xid.lock().unwrap();
+        // mpv runs as a real OS subprocess and embeds into a child X11
+        // window we own (sized to the React layout's video slot).
         let program = mpv_executable();
-        tracing::info!(program = %program, ?parent_xid, "spawning mpv subprocess");
+        tracing::info!(program = %program, "spawning mpv subprocess");
         let mut cmd = Command::new(&program);
-        if let Some(xid) = parent_xid {
-            cmd.arg(format!("--wid={xid}"))
+        if let Some(child_xid) = self.child.lock().unwrap().as_ref().map(|c| c.xid) {
+            cmd.arg(format!("--wid={child_xid}"))
                 // mpv's `--wid` is X11-only; force the X11 GPU context
                 // (default `auto` prefers Wayland whenever WAYLAND_DISPLAY
                 // is set, which crashes with dmabuf import errors against
                 // an X11-embedded window).
                 .arg("--gpu-context=x11egl");
             cmd.env_remove("WAYLAND_DISPLAY");
-
-            if let Some((w, h, x, y)) = *self.region.lock().unwrap() {
-                cmd.arg(format!("--geometry={w}x{h}+{x}+{y}"));
-                tracing::info!(w, h, x, y, "mpv initial geometry");
-            }
+            tracing::info!(child_xid, "embedding mpv into our child X11 window");
         }
         cmd.arg("--profile=low-latency")
             .arg("--no-cache")
