@@ -27,7 +27,7 @@ export default function App() {
   return (
     <div className="h-full flex flex-col">
       <Titlebar />
-      <main className="flex-1 min-h-0">
+      <main className="flex-1 min-h-0 relative overflow-hidden">
         {!settings ? (
           <div className="grid place-items-center h-full text-zinc-500 text-sm">
             Loading…
