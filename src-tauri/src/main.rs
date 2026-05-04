@@ -4,6 +4,7 @@
 mod settings;
 mod devices;
 mod hotplug;
+mod capture;
 
 fn main() {
     tracing_subscriber::fmt()
