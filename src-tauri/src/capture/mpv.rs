@@ -186,6 +186,14 @@ impl CaptureBackend for MpvBackend {
             tracing::info!(child_xid, "embedding mpv into our child X11 window");
         }
         cmd.arg("--profile=low-latency")
+            // Suppress mpv's own UI — no on-screen controller, no OSD
+            // text, no input bindings/cursor. The control surface lives
+            // entirely in our overlay window.
+            .arg("--osc=no")
+            .arg("--no-osd-bar")
+            .arg("--input-default-bindings=no")
+            .arg("--input-vo-keyboard=no")
+            .arg("--cursor-autohide=always")
             .arg("--no-cache")
             .arg("--untimed")
             .arg("--video-latency-hacks=yes")
