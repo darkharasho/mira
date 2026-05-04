@@ -1,9 +1,6 @@
-//! libmpv-based CaptureBackend implementation.
-//!
-//! Task 7: skeleton wiring of an `Mpv` child instance with the same
-//! latency-tuning property set as the reference shell script. The mpv
-//! window is a separate top-level for now; embedding into the Tauri
-//! window is Task 11.
+//! libmpv-based CaptureBackend implementation. mpv runs as its own
+//! freely-positioned top-level window (no embedding, no overlay games);
+//! the Tauri window is a control panel that drives it.
 
 use std::path::Path;
 use std::sync::Mutex;
@@ -25,13 +22,6 @@ impl MpvBackend {
 
     fn map_err<E: std::fmt::Display>(e: E) -> CaptureError {
         CaptureError::Mpv(e.to_string())
-    }
-
-    pub fn set_geometry(&self, geometry: &str) -> Result<(), CaptureError> {
-        let guard = self.inner.lock().unwrap();
-        let mpv = guard.as_ref().ok_or(CaptureError::NotStarted)?;
-        mpv.set_property("geometry", geometry.to_string())
-            .map_err(Self::map_err)
     }
 }
 
@@ -70,11 +60,11 @@ impl CaptureBackend for MpvBackend {
                 ("demuxer-lavf-probesize", "32"),
                 ("demuxer-lavf-analyzeduration", "0"),
                 ("force-window", "yes"),
-                ("border", "no"),
-                ("title", "elgato-capture-video"),
+                ("title", "Elgato Capture — Video"),
                 ("idle", "no"),
                 ("input-default-bindings", "no"),
                 ("input-vo-keyboard", "no"),
+                ("keep-open", "no"),
             ];
             for (k, v) in pairs {
                 init.set_property(k, (*v).to_string())?;

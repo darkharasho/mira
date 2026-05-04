@@ -21,14 +21,12 @@ export function StartupScreen({
     [devices.video, video],
   );
 
-  // Default selections once devices load
   useEffect(() => {
     if (loading) return;
     if (!video && devices.video[0]) setVideo(devices.video[0].path);
     if (!audio && devices.audio[0]) setAudio(devices.audio[0].id);
   }, [loading, devices, video, audio]);
 
-  // Reset pix_fmt if not in selected device's formats
   useEffect(() => {
     if (!selectedVideo) return;
     if (!selectedVideo.formats.find((f) => f.label === pixFmt)) {
@@ -40,12 +38,32 @@ export function StartupScreen({
   const ready = !!video && !!audio && !!pixFmt;
 
   return (
-    <div className="grid place-items-center h-full p-6">
-      <div className="w-[420px] rounded-2xl border border-white/10 bg-glass backdrop-blur-xl p-6 space-y-4">
-        <div>
-          <h1 className="text-lg font-semibold">Select capture source</h1>
-          <p className="text-xs text-white/50 mt-1">Choose your video device, audio source, and pixel format.</p>
+    <div className="h-full flex flex-col p-5">
+      <header className="flex items-center justify-between mb-5">
+        <div className="flex items-center gap-2.5">
+          <div className="w-2 h-2 rounded-full bg-accent shadow-[0_0_8px_#5cf08a]" />
+          <h1 className="text-sm font-semibold tracking-tight">Elgato Capture</h1>
         </div>
+        <button
+          onClick={refresh}
+          disabled={loading}
+          title="Refresh devices"
+          className="text-zinc-500 hover:text-zinc-200 transition-colors disabled:opacity-30
+                     w-7 h-7 grid place-items-center rounded-md hover:bg-white/5"
+        >
+          <svg viewBox="0 0 16 16" className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} fill="none">
+            <path
+              d="M2 8a6 6 0 0 1 10.5-3.97M14 8a6 6 0 0 1-10.5 3.97M14 2v3.5h-3.5M2 14v-3.5h3.5"
+              stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      </header>
+
+      <div className="flex-1 flex flex-col gap-3.5">
+        <p className="text-xs text-zinc-400 leading-relaxed">
+          Pick your capture source. The video preview opens in its own window when you click Start.
+        </p>
 
         <DevicePicker
           label="Video device"
@@ -69,41 +87,34 @@ export function StartupScreen({
           disabled={loading || !selectedVideo}
         />
 
-        <label className="flex items-center gap-2 text-xs text-white/70 select-none">
+        <label className="flex items-center gap-2.5 text-xs text-zinc-400 select-none cursor-pointer mt-1">
           <input
             type="checkbox"
             checked={skip}
             onChange={(e) => setSkip(e.target.checked)}
+            className="w-3.5 h-3.5 rounded accent-accent"
           />
-          Remember and skip this screen next time
+          Remember and skip this on next launch
         </label>
-
-        <div className="flex gap-2 pt-2">
-          <button
-            className="flex-1 rounded-lg bg-white/10 hover:bg-white/15 disabled:opacity-50 py-2 text-sm font-medium transition"
-            disabled={!ready}
-            onClick={() =>
-              onStart({
-                ...initial,
-                video_device: video,
-                audio_device: audio,
-                pix_fmt: pixFmt,
-                skip_startup: skip,
-              })
-            }
-          >
-            Start
-          </button>
-          <button
-            className="rounded-lg border border-white/10 hover:bg-white/5 px-3 py-2 text-sm transition"
-            onClick={refresh}
-            disabled={loading}
-            title="Refresh devices"
-          >
-            ↻
-          </button>
-        </div>
       </div>
+
+      <button
+        className="mt-4 w-full rounded-lg bg-accent text-zinc-950 font-medium py-2.5 text-sm
+                   hover:bg-accent/90 disabled:bg-zinc-800 disabled:text-zinc-600 disabled:cursor-not-allowed
+                   transition-colors shadow-[0_0_24px_-6px_#5cf08a]"
+        disabled={!ready}
+        onClick={() =>
+          onStart({
+            ...initial,
+            video_device: video,
+            audio_device: audio,
+            pix_fmt: pixFmt,
+            skip_startup: skip,
+          })
+        }
+      >
+        Start capture
+      </button>
     </div>
   );
 }

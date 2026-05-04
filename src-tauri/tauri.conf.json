@@ -14,12 +14,12 @@
       {
         "label": "main",
         "title": "Elgato Capture",
-        "width": 1280,
-        "height": 720,
-        "minWidth": 640,
-        "minHeight": 360,
-        "decorations": false,
-        "transparent": true,
+        "width": 520,
+        "height": 460,
+        "minWidth": 480,
+        "minHeight": 420,
+        "decorations": true,
+        "transparent": false,
         "resizable": true,
         "fullscreen": false
       }

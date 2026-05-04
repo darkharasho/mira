@@ -2,10 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useDevices } from "../hooks/useDevices";
 import { useStream } from "../hooks/useStream";
 import { useStats } from "../hooks/useStats";
-import { useAutoHide } from "../hooks/useAutoHide";
 import { useHotkeys } from "../hooks/useHotkeys";
-import { ControlBar } from "../components/ControlBar";
-import { StatsOverlay } from "../components/StatsOverlay";
 import { SettingsPanel } from "../components/SettingsPanel";
 import { Toast } from "../components/Toast";
 import {
@@ -28,7 +25,6 @@ export function ViewerScreen({
   const { devices } = useDevices();
   const { state, error, start, stop } = useStream();
   const stats = useStats();
-  const visible = useAutoHide(2500);
   const [panelOpen, setPanelOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -43,7 +39,6 @@ export function ViewerScreen({
     [settings],
   );
 
-  // Start the stream once on mount; stop on unmount.
   useEffect(() => {
     if (state === "idle") start(cfg);
     return () => {
@@ -79,11 +74,6 @@ export function ViewerScreen({
     ipcSetMute(next).catch(() => {});
   }, [settings.muted, onChangeSettings]);
 
-  const onFullscreen = useCallback(async () => {
-    const win = getCurrentWindow();
-    await win.setFullscreen(!(await win.isFullscreen()));
-  }, []);
-
   const onToggleStats = useCallback(
     () => onChangeSettings({ show_stats: !settings.show_stats }),
     [settings.show_stats, onChangeSettings],
@@ -92,31 +82,36 @@ export function ViewerScreen({
   const onQuit = useCallback(() => getCurrentWindow().close(), []);
 
   useHotkeys({
-    f: onFullscreen,
     m: onMute,
     s: onToggleStats,
     p: onScreenshot,
     q: onQuit,
-    escape: async () => {
-      const win = getCurrentWindow();
+    escape: () => {
       if (panelOpen) setPanelOpen(false);
-      else if (await win.isFullscreen()) await win.setFullscreen(false);
     },
   });
 
-  // Persist volume changes via IPC immediately.
   useEffect(() => {
     ipcSetVolume(settings.volume).catch(() => {});
   }, [settings.volume]);
 
-  const status =
-    state === "running"
-      ? "running"
-      : state === "starting"
-        ? "starting"
-        : state === "error"
-          ? "error"
-          : "idle";
+  const status: "running" | "starting" | "error" | "idle" =
+    state === "running" ? "running"
+      : state === "starting" ? "starting"
+      : state === "error" ? "error"
+      : "idle";
+
+  const dotClass =
+    status === "running" ? "bg-accent shadow-[0_0_8px_#5cf08a]"
+      : status === "starting" ? "bg-zinc-400 animate-pulse"
+      : status === "error" ? "bg-warn shadow-[0_0_8px_#f0b35c]"
+      : "bg-zinc-600";
+
+  const statusText =
+    status === "running" ? "Live"
+      : status === "starting" ? "Starting…"
+      : status === "error" ? "Error"
+      : "Idle";
 
   const deviceLabel =
     devices.video.find((d) => d.path === settings.video_device)?.name ??
@@ -124,23 +119,119 @@ export function ViewerScreen({
     "—";
 
   return (
-    <div className="absolute inset-0">
-      {/* Top drag region for the borderless transparent window */}
-      <div
-        data-tauri-drag-region
-        className={`absolute top-0 left-0 right-0 h-8 transition-opacity ${visible ? "opacity-100" : "opacity-0"}`}
-      />
-      <StatsOverlay stats={stats} visible={!!settings.show_stats && visible} />
-      <ControlBar
-        visible={visible}
-        status={status}
-        deviceLabel={deviceLabel}
-        muted={settings.muted}
-        onMute={onMute}
-        onScreenshot={onScreenshot}
-        onFullscreen={onFullscreen}
-        onSettings={() => setPanelOpen(true)}
-      />
+    <div className="h-full flex flex-col p-5">
+      <header className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className={`w-2 h-2 rounded-full shrink-0 ${dotClass}`} />
+          <h1 className="text-sm font-semibold tracking-tight">{statusText}</h1>
+          <span className="text-xs text-zinc-500">·</span>
+          <span className="text-xs text-zinc-400 truncate" title={deviceLabel}>
+            {deviceLabel}
+          </span>
+        </div>
+        <button
+          onClick={() => setPanelOpen(true)}
+          title="Settings"
+          className="text-zinc-500 hover:text-zinc-200 transition-colors w-7 h-7 grid place-items-center rounded-md hover:bg-white/5 shrink-0"
+        >
+          <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none">
+            <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.4" />
+            <path
+              d="M8 1v2m0 10v2m4.95-12.95l-1.41 1.41M3.46 12.54l-1.41 1.41M15 8h-2M3 8H1m12.95 4.95l-1.41-1.41M3.46 3.46L2.05 2.05"
+              stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"
+            />
+          </svg>
+        </button>
+      </header>
+
+      {error && (
+        <div className="mb-4 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-warn flex items-start gap-2">
+          <span>⚠</span>
+          <div className="flex-1">
+            <div className="font-mono leading-snug">{error}</div>
+            <button
+              className="underline mt-1 hover:text-warn/80"
+              onClick={onResetToStartup}
+            >
+              Open settings
+            </button>
+          </div>
+        </div>
+      )}
+
+      <section className="flex-1 rounded-xl border border-white/10 bg-zinc-900/60 p-4 flex flex-col">
+        {settings.show_stats && stats ? (
+          <div className="font-mono text-[11px] text-zinc-400 leading-relaxed grid grid-cols-2 gap-y-1.5">
+            <div className="text-zinc-500">Resolution</div>
+            <div className="text-right text-zinc-200">{stats.width}×{stats.height}</div>
+            <div className="text-zinc-500">Frame rate</div>
+            <div className="text-right text-zinc-200">{stats.fps.toFixed(2)} fps</div>
+            <div className="text-zinc-500">Format</div>
+            <div className="text-right text-zinc-200">{stats.pix_fmt || "—"}</div>
+            <div className="text-zinc-500">Latency</div>
+            <div className="text-right text-zinc-200">{stats.latency_ms} ms</div>
+          </div>
+        ) : (
+          <div className="flex-1 grid place-items-center text-xs text-zinc-500">
+            {status === "running"
+              ? "Stats hidden · press S"
+              : status === "starting"
+              ? "Connecting to capture device…"
+              : status === "error"
+              ? "Stream stopped"
+              : "Idle"}
+          </div>
+        )}
+
+        <div className="mt-4 pt-3 border-t border-white/5 flex items-center gap-2">
+          <span className="text-[10px] uppercase tracking-[0.14em] text-zinc-500 mr-1">Volume</span>
+          <input
+            type="range"
+            min={0}
+            max={150}
+            value={settings.volume}
+            onChange={(e) => onChangeSettings({ volume: Number(e.target.value) })}
+            className="flex-1 accent-accent"
+          />
+          <span className="text-[10px] font-mono text-zinc-500 w-9 text-right">{settings.volume}</span>
+        </div>
+      </section>
+
+      <footer className="mt-4 flex items-center gap-2">
+        <ActionBtn onClick={onScreenshot} title="Screenshot (P)">
+          <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none">
+            <rect x="1.5" y="3.5" width="13" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
+            <circle cx="8" cy="8.5" r="2.5" stroke="currentColor" strokeWidth="1.4" />
+            <path d="M5.5 3.5L6.5 2h3l1 1.5" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+          </svg>
+        </ActionBtn>
+        <ActionBtn onClick={onMute} title="Mute (M)" active={settings.muted}>
+          {settings.muted ? (
+            <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none">
+              <path d="M8 3L4.5 6H2v4h2.5L8 13V3z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+              <path d="M11 6l3 4M14 6l-3 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none">
+              <path d="M8 3L4.5 6H2v4h2.5L8 13V3z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+              <path d="M11 6c.8.8.8 3.2 0 4M13 4c1.5 1.5 1.5 6.5 0 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            </svg>
+          )}
+        </ActionBtn>
+        <ActionBtn onClick={onToggleStats} title="Toggle stats (S)" active={settings.show_stats}>
+          <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none">
+            <path d="M2 13V8m4 5V5m4 8V9m4 4V3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+          </svg>
+        </ActionBtn>
+        <div className="flex-1" />
+        <button
+          onClick={onResetToStartup}
+          className="text-xs text-zinc-500 hover:text-zinc-200 transition-colors px-2 py-1.5"
+        >
+          Change source
+        </button>
+      </footer>
+
       <SettingsPanel
         open={panelOpen}
         onClose={() => setPanelOpen(false)}
@@ -149,15 +240,33 @@ export function ViewerScreen({
         onChange={onChangeSettings}
         onApply={onApplySettings}
       />
-      {error && (
-        <div className="absolute top-3 left-4 text-xs text-warn font-mono">
-          ⚠ {error}{" "}
-          <button className="underline ml-2" onClick={onResetToStartup}>
-            open settings
-          </button>
-        </div>
-      )}
+
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
     </div>
+  );
+}
+
+function ActionBtn({
+  children,
+  onClick,
+  title,
+  active,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  title: string;
+  active?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className={`grid place-items-center w-9 h-9 rounded-lg border transition-colors
+                  ${active
+                    ? "bg-accent/15 border-accent/40 text-accent"
+                    : "bg-zinc-900/80 border-white/10 text-zinc-300 hover:bg-zinc-800 hover:border-white/20"}`}
+    >
+      {children}
+    </button>
   );
 }
