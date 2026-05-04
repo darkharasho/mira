@@ -76,43 +76,44 @@ impl CaptureBackend for MpvBackend {
             return Err(CaptureError::Other("pix_fmt is empty".into()));
         }
 
-        // Use Mpv::with_initializer for the pre-init properties that mpv
-        // requires before mpv_initialize() (matching the script's CLI flags).
-        let pix_fmt = cfg.pix_fmt.clone();
-        let audio_device = cfg.audio_device.clone();
-        let mpv = Mpv::with_initializer(move |init| -> Result<(), libmpv2::Error> {
-            for (k, v) in [
-                ("profile", "low-latency"),
-                ("cache", "no"),
-                ("untimed", "yes"),
-                ("video-latency-hacks", "yes"),
-                ("vd-lavc-threads", "1"),
-                ("demuxer-readahead-secs", "0"),
-                ("demuxer-lavf-format", "video4linux2"),
-                ("demuxer-lavf-probesize", "32"),
-                ("demuxer-lavf-analyzeduration", "0"),
-                ("title", "Elgato Capture"),
-            ] {
-                init.set_property(k, v.to_string()).map_err(|e| {
-                    tracing::error!(prop = k, val = v, ?e, "pre-init set_property failed");
-                    e
-                })?;
-            }
-            let lavf_opts = format!("pixel_format={}", pix_fmt);
-            init.set_property("demuxer-lavf-o", lavf_opts.clone()).map_err(|e| {
-                tracing::error!(prop = "demuxer-lavf-o", val = %lavf_opts, ?e, "pre-init set_property failed");
-                e
-            })?;
-            let audio_file = format!("av://alsa:{}", audio_device);
-            init.set_property("audio-file", audio_file.clone()).map_err(|e| {
-                tracing::error!(prop = "audio-file", val = %audio_file, ?e, "pre-init set_property failed");
-                e
-            })?;
-            Ok(())
-        })
-        .map_err(Self::ctx("mpv init"))?;
+        // Build the mpv instance and apply every property post-init via
+        // a single `try_set` helper so any failing key/value gets reported
+        // back to the UI by name. Each set is also logged to tracing so
+        // the terminal shows a clean trail.
+        let mpv = Mpv::new().map_err(Self::ctx("mpv_create"))?;
 
-        // Volume + mute can be set post-init.
+        // Turn libmpv's own stderr logging on so we see what it didn't like.
+        let _ = mpv.set_property("terminal", "yes".to_string());
+        let _ = mpv.set_property("msg-level", "all=v".to_string());
+
+        let pairs: Vec<(&'static str, String)> = vec![
+            ("profile", "low-latency".into()),
+            ("cache", "no".into()),
+            ("untimed", "yes".into()),
+            ("video-latency-hacks", "yes".into()),
+            ("vd-lavc-threads", "1".into()),
+            ("demuxer-readahead-secs", "0".into()),
+            ("demuxer-lavf-format", "video4linux2".into()),
+            ("demuxer-lavf-probesize", "32".into()),
+            ("demuxer-lavf-analyzeduration", "0".into()),
+            ("demuxer-lavf-o", format!("pixel_format={}", cfg.pix_fmt)),
+            ("audio-file", format!("av://alsa:{}", cfg.audio_device)),
+            ("title", "Elgato Capture".into()),
+        ];
+        for (k, v) in pairs {
+            tracing::debug!(prop = k, val = %v, "set_property");
+            if let Err(e) = mpv.set_property(k, v.clone()) {
+                tracing::error!(prop = k, val = %v, ?e, "set_property failed");
+                return Err(CaptureError::Mpv(format!(
+                    "set {k}={v}: {}",
+                    {
+                        let m = e.to_string();
+                        if m.is_empty() || m == "null" { "rejected by libmpv (see terminal for details)".into() } else { m }
+                    }
+                )));
+            }
+        }
+
         mpv.set_property("volume", cfg.volume as i64)
             .map_err(Self::ctx("set volume"))?;
         mpv.set_property("mute", if cfg.muted { "yes" } else { "no" }.to_string())
