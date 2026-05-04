@@ -21,7 +21,24 @@ impl MpvBackend {
     }
 
     fn map_err<E: std::fmt::Display>(e: E) -> CaptureError {
-        CaptureError::Mpv(e.to_string())
+        let msg = e.to_string();
+        if msg.is_empty() || msg == "null" {
+            CaptureError::Mpv(format!("{:?}", "<empty libmpv error — check tracing logs>"))
+        } else {
+            CaptureError::Mpv(msg)
+        }
+    }
+
+    fn ctx<E: std::fmt::Display>(what: &'static str) -> impl Fn(E) -> CaptureError {
+        move |e| {
+            let msg = e.to_string();
+            let msg = if msg.is_empty() || msg == "null" {
+                "<no detail>".to_string()
+            } else {
+                msg
+            };
+            CaptureError::Mpv(format!("{what}: {msg}"))
+        }
     }
 }
 
@@ -35,24 +52,36 @@ impl CaptureBackend for MpvBackend {
     fn start(&self, cfg: &StreamConfig) -> Result<(), CaptureError> {
         let mut guard = self.inner.lock().unwrap();
         if guard.is_some() {
-            // Drop the previous instance before creating a new one.
             let _ = guard.take();
         }
 
-        // Properties that are most reliably applied before initialization
-        // (matching the CLI flags used by the reference script). libmpv2's
-        // `with_initializer` exposes a pre-init context for exactly this.
+        tracing::info!(
+            video = %cfg.video_device,
+            audio = %cfg.audio_device,
+            pix_fmt = %cfg.pix_fmt,
+            volume = cfg.volume,
+            muted = cfg.muted,
+            "starting mpv stream"
+        );
+
+        // Validate inputs before handing them to libmpv (avoids the
+        // notorious empty-error case from FFI nulls).
+        if cfg.video_device.is_empty() {
+            return Err(CaptureError::Other("video_device is empty".into()));
+        }
+        if cfg.audio_device.is_empty() {
+            return Err(CaptureError::Other("audio_device is empty".into()));
+        }
+        if cfg.pix_fmt.is_empty() {
+            return Err(CaptureError::Other("pix_fmt is empty".into()));
+        }
+
+        // Use Mpv::with_initializer for the pre-init properties that mpv
+        // requires before mpv_initialize() (matching the script's CLI flags).
         let pix_fmt = cfg.pix_fmt.clone();
         let audio_device = cfg.audio_device.clone();
-        let volume = cfg.volume as i64;
-        let muted = cfg.muted;
-
-        let mpv = Mpv::with_initializer(move |init| {
-            // Pairs of (key, value) string properties.
-            // Match the reference shell script's flag set exactly. The
-            // script's mpv opens its own window with default decorations;
-            // we don't override that.
-            let pairs: &[(&str, &str)] = &[
+        let mpv = Mpv::with_initializer(move |init| -> Result<(), libmpv2::Error> {
+            for (k, v) in [
                 ("profile", "low-latency"),
                 ("cache", "no"),
                 ("untimed", "yes"),
@@ -63,26 +92,38 @@ impl CaptureBackend for MpvBackend {
                 ("demuxer-lavf-probesize", "32"),
                 ("demuxer-lavf-analyzeduration", "0"),
                 ("title", "Elgato Capture"),
-            ];
-            for (k, v) in pairs {
-                init.set_property(k, (*v).to_string())?;
+            ] {
+                init.set_property(k, v.to_string()).map_err(|e| {
+                    tracing::error!(prop = k, val = v, ?e, "pre-init set_property failed");
+                    e
+                })?;
             }
-            init.set_property(
-                "demuxer-lavf-o",
-                format!("pixel_format={}", pix_fmt),
-            )?;
-            init.set_property("audio-file", format!("av://alsa:{}", audio_device))?;
-            init.set_property("volume", volume)?;
-            init.set_property("mute", if muted { "yes" } else { "no" }.to_string())?;
+            let lavf_opts = format!("pixel_format={}", pix_fmt);
+            init.set_property("demuxer-lavf-o", lavf_opts.clone()).map_err(|e| {
+                tracing::error!(prop = "demuxer-lavf-o", val = %lavf_opts, ?e, "pre-init set_property failed");
+                e
+            })?;
+            let audio_file = format!("av://alsa:{}", audio_device);
+            init.set_property("audio-file", audio_file.clone()).map_err(|e| {
+                tracing::error!(prop = "audio-file", val = %audio_file, ?e, "pre-init set_property failed");
+                e
+            })?;
             Ok(())
         })
-        .map_err(Self::map_err)?;
+        .map_err(Self::ctx("mpv init"))?;
+
+        // Volume + mute can be set post-init.
+        mpv.set_property("volume", cfg.volume as i64)
+            .map_err(Self::ctx("set volume"))?;
+        mpv.set_property("mute", if cfg.muted { "yes" } else { "no" }.to_string())
+            .map_err(Self::ctx("set mute"))?;
 
         // Begin playback of the V4L2 device.
         mpv.command("loadfile", &[&cfg.video_device, "replace"])
-            .map_err(Self::map_err)?;
+            .map_err(Self::ctx("loadfile"))?;
 
         *guard = Some(mpv);
+        tracing::info!("mpv stream started");
         Ok(())
     }
 
