@@ -4,11 +4,10 @@ import { useStream } from "../hooks/useStream";
 import { useStats } from "../hooks/useStats";
 import { useHotkeys } from "../hooks/useHotkeys";
 import { SettingsPanel } from "../components/SettingsPanel";
-import { Toast } from "../components/Toast";
 import {
   setMute as ipcSetMute,
-  setVolume as ipcSetVolume,
   setVideoRegion,
+  setVideoVisible,
   takeScreenshot,
 } from "../lib/ipc";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -27,20 +26,20 @@ export function ViewerScreen({
   const { state, error, start, stop } = useStream();
   const stats = useStats();
   const [panelOpen, setPanelOpen] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
   const videoSlotRef = useRef<HTMLDivElement | null>(null);
 
-  // Push the video slot's bounding rect to mpv whenever it changes.
+  // Push the video slot's bounding rect to mpv on every layout change.
   useEffect(() => {
     const el = videoSlotRef.current;
     if (!el) return;
     const push = () => {
       const r = el.getBoundingClientRect();
-      const w = Math.max(1, Math.round(r.width));
-      const h = Math.max(1, Math.round(r.height));
-      const x = Math.round(r.left);
-      const y = Math.round(r.top);
-      setVideoRegion(w, h, x, y).catch(() => {});
+      setVideoRegion(
+        Math.max(1, Math.round(r.width)),
+        Math.max(1, Math.round(r.height)),
+        Math.round(r.left),
+        Math.round(r.top),
+      ).catch(() => {});
     };
     push();
     const ro = new ResizeObserver(push);
@@ -51,6 +50,12 @@ export function ViewerScreen({
       window.removeEventListener("resize", push);
     };
   }, []);
+
+  // Hide the embedded mpv X11 child while the settings panel is open
+  // so the panel renders above it; show again on close.
+  useEffect(() => {
+    setVideoVisible(!panelOpen).catch(() => {});
+  }, [panelOpen]);
 
   const cfg = useMemo(
     () => ({
@@ -85,10 +90,9 @@ export function ViewerScreen({
 
   const onScreenshot = useCallback(async () => {
     try {
-      const path = await takeScreenshot();
-      setToast(`Saved ${path.split("/").pop()}`);
-    } catch (e) {
-      setToast(`Screenshot failed: ${e}`);
+      await takeScreenshot();
+    } catch {
+      /* no-op — overlay handles the user-facing toast for screenshots */
     }
   }, []);
 
@@ -115,10 +119,6 @@ export function ViewerScreen({
     },
   });
 
-  useEffect(() => {
-    ipcSetVolume(settings.volume).catch(() => {});
-  }, [settings.volume]);
-
   const status: "running" | "starting" | "error" | "idle" =
     state === "running" ? "running"
       : state === "starting" ? "starting"
@@ -142,22 +142,9 @@ export function ViewerScreen({
     settings.video_device ??
     "—";
 
-  const muteIcon = settings.muted ? (
-    <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none">
-      <path d="M8 3L4.5 6H2v4h2.5L8 13V3z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-      <path d="M11 6l3 4M14 6l-3 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-    </svg>
-  ) : (
-    <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none">
-      <path d="M8 3L4.5 6H2v4h2.5L8 13V3z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-      <path d="M11 6c.8.8.8 3.2 0 4M13 4c1.5 1.5 1.5 6.5 0 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-    </svg>
-  );
-
   return (
     <div className="h-full flex flex-col">
-      {/* Top chrome strip — opaque, sits above the embedded mpv region */}
-      <header className="px-4 py-2 flex items-center justify-between border-b border-white/5 bg-zinc-950/80">
+      <header className="px-4 py-2 flex items-center justify-between border-b border-white/5 bg-zinc-950/80 shrink-0">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className={`w-2 h-2 rounded-full shrink-0 ${dotClass}`} />
           <span className="text-xs font-medium tracking-tight text-zinc-100">{statusText}</span>
@@ -165,6 +152,14 @@ export function ViewerScreen({
           <span className="text-xs text-zinc-300 truncate max-w-[420px]" title={deviceLabel}>
             {deviceLabel}
           </span>
+          {settings.show_stats && stats && status === "running" && (
+            <>
+              <span className="text-xs text-zinc-600">·</span>
+              <span className="text-[10px] font-mono text-zinc-500">
+                {stats.width}×{stats.height} · {stats.fps.toFixed(2)} fps · {stats.latency_ms}ms
+              </span>
+            </>
+          )}
         </div>
         <button
           onClick={() => setPanelOpen(true)}
@@ -194,7 +189,7 @@ export function ViewerScreen({
       )}
 
       {/* Video slot — bare div whose bounding rect is reported to mpv,
-          which renders its embedded X11 window in this exact rectangle. */}
+          which renders its embedded X11 child window in this rectangle. */}
       <div ref={videoSlotRef} className="flex-1 min-h-0 bg-black relative">
         {status !== "running" && (
           <div className="absolute inset-0 grid place-items-center text-xs text-zinc-600 pointer-events-none">
@@ -207,66 +202,6 @@ export function ViewerScreen({
         )}
       </div>
 
-      {/* Bottom chrome strip — opaque, contains the floating pill */}
-      <div className="border-t border-white/5 bg-zinc-950/80 py-3 px-4 flex items-center justify-between gap-3">
-        {settings.show_stats && stats && status === "running" ? (
-          <div className="font-mono text-[10px] text-zinc-500 leading-snug shrink-0">
-            <div>{stats.width}×{stats.height} · {stats.fps.toFixed(2)} fps</div>
-            <div>{stats.pix_fmt || "—"} · {stats.latency_ms}ms</div>
-          </div>
-        ) : (
-          <div className="text-[10px] text-zinc-600 shrink-0 w-28">&nbsp;</div>
-        )}
-        <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-full
-                        bg-zinc-900/85 border border-white/10">
-
-          <PillBtn onClick={onScreenshot} title="Screenshot (P)">
-            <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none">
-              <rect x="1.5" y="3.5" width="13" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
-              <circle cx="8" cy="8.5" r="2.5" stroke="currentColor" strokeWidth="1.4" />
-              <path d="M5.5 3.5L6.5 2h3l1 1.5" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-            </svg>
-          </PillBtn>
-
-          <PillBtn onClick={onToggleStats} title="Toggle stats (S)" active={settings.show_stats}>
-            <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none">
-              <path d="M2 13V8m4 5V5m4 8V9m4 4V3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-            </svg>
-          </PillBtn>
-
-          <span className="w-px h-4 bg-white/10 mx-0.5" />
-
-          {/* Mute button anchored right, slider expands leftward on hover */}
-          <div className="group/vol flex items-center">
-            <div
-              className="overflow-hidden flex items-center
-                         w-0 group-hover/vol:w-44
-                         opacity-0 group-hover/vol:opacity-100
-                         transition-all duration-200 ease-out"
-            >
-              <span className="text-[10px] font-mono text-zinc-400 w-8 text-right tabular-nums select-none mr-2">
-                {settings.volume}
-              </span>
-              <input
-                type="range"
-                min={0}
-                max={150}
-                value={settings.volume}
-                onChange={(e) => onChangeSettings({ volume: Number(e.target.value) })}
-                className="w-32 accent-accent mr-2"
-              />
-            </div>
-            <PillBtn
-              onClick={onMute}
-              title={settings.muted ? "Unmute (M)" : "Mute (M)"}
-              active={settings.muted}
-            >
-              {muteIcon}
-            </PillBtn>
-          </div>
-        </div>
-      </div>
-
       <SettingsPanel
         open={panelOpen}
         onClose={() => setPanelOpen(false)}
@@ -275,51 +210,6 @@ export function ViewerScreen({
         onChange={onChangeSettings}
         onApply={onApplySettings}
       />
-
-      {toast && <Toast message={toast} onDone={() => setToast(null)} />}
     </div>
-  );
-}
-
-function PillBtn({
-  children,
-  onClick,
-  title,
-  active,
-  showTooltip = true,
-}: {
-  children: React.ReactNode;
-  onClick: () => void;
-  title: string;
-  active?: boolean;
-  showTooltip?: boolean;
-}) {
-  return (
-    <span className="relative group/tip inline-flex">
-      <button
-        onClick={onClick}
-        aria-label={title}
-        className={`grid place-items-center w-9 h-9 rounded-full transition-all duration-150
-                    active:scale-90
-                    ${active
-                      ? "bg-accent/25 text-accent shadow-[0_0_14px_-2px_rgba(92,240,138,0.6)] hover:bg-accent/40 hover:scale-105"
-                      : "text-zinc-400 hover:bg-white/20 hover:text-white hover:scale-110"}`}
-      >
-        {children}
-      </button>
-      {showTooltip && (
-        <span
-          className="absolute -top-10 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-md
-                     bg-zinc-950/95 border border-white/15
-                     text-[11px] font-medium text-white whitespace-nowrap
-                     opacity-0 group-hover/tip:opacity-100
-                     translate-y-1 group-hover/tip:translate-y-0
-                     transition-all duration-150 pointer-events-none z-50
-                     shadow-[0_6px_20px_-4px_rgba(0,0,0,0.8)]"
-        >
-          {title}
-        </span>
-      )}
-    </span>
   );
 }

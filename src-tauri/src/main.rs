@@ -44,6 +44,7 @@ fn main() {
             commands::default_settings,
             commands::set_video_region,
             commands::set_overlay_input_region,
+            commands::set_video_visible,
         ])
         .setup(move |app| {
             crate::hotplug::spawn(app.handle().clone());
@@ -60,10 +61,18 @@ fn main() {
                 );
             }
 
-            // Build the overlay window: transparent, borderless, no decorations,
-            // always-on-top, no taskbar entry. Same size + position as main.
+            // Build the overlay window — a thin, always-on-top, transparent
+            // strip pinned to the bottom-center of main that hosts the
+            // floating control pill. By keeping it small (no transparent
+            // middle to worry about), we don't need XShape input regions:
+            // every pixel of the overlay is the pill, and pill catches
+            // events naturally.
             let pos = main_win.outer_position().unwrap_or_default();
             let size = main_win.outer_size().unwrap_or_default();
+            let overlay_w: u32 = 460;
+            let overlay_h: u32 = 64;
+            let overlay_x = pos.x + (size.width as i32 - overlay_w as i32) / 2;
+            let overlay_y = pos.y + (size.height as i32 - overlay_h as i32 - 24);
             let overlay = WebviewWindowBuilder::new(
                 app,
                 "overlay",
@@ -76,31 +85,40 @@ fn main() {
             .skip_taskbar(true)
             .focused(false)
             .accept_first_mouse(false)
-            .position(pos.x as f64, pos.y as f64)
-            .inner_size(size.width as f64, size.height as f64)
+            .position(overlay_x as f64, overlay_y as f64)
+            .inner_size(overlay_w as f64, overlay_h as f64)
             .build()
             .expect("overlay window build failed");
             tracing::info!("overlay window created");
-
-            // Stash the overlay's X11 ID so the input-region command can
-            // address it via XShape later.
             if let Some(overlay_xid) = x11_window_id(&overlay) {
                 backend_for_setup.set_overlay_xid(overlay_xid);
             }
 
-            // Position-track: when main moves or resizes, drag the overlay
-            // along with it.
+            // Position-track: keep the overlay pinned to the bottom-center
+            // of main on every move and resize.
             let overlay_for_track = overlay.clone();
+            let main_win_for_track = main_win.clone();
+            let reposition_overlay = move || {
+                let pos = match main_win_for_track.outer_position() {
+                    Ok(p) => p,
+                    Err(_) => return,
+                };
+                let size = match main_win_for_track.outer_size() {
+                    Ok(s) => s,
+                    Err(_) => return,
+                };
+                let x = pos.x + (size.width as i32 - overlay_w as i32) / 2;
+                let y = pos.y + (size.height as i32 - overlay_h as i32 - 24);
+                let _ = overlay_for_track.set_position(tauri::PhysicalPosition::new(x, y));
+            };
+            let main_for_event = main_win.clone();
             main_win.on_window_event(move |event| match event {
-                WindowEvent::Moved(p) => {
-                    let _ = overlay_for_track.set_position(tauri::PhysicalPosition::new(p.x, p.y));
-                }
-                WindowEvent::Resized(s) => {
-                    let _ = overlay_for_track
-                        .set_size(tauri::PhysicalSize::new(s.width, s.height));
-                }
+                WindowEvent::Moved(_) | WindowEvent::Resized(_) => reposition_overlay(),
                 WindowEvent::CloseRequested { .. } => {
-                    let _ = overlay_for_track.close();
+                    if let Some(overlay) = main_for_event.app_handle().get_webview_window("overlay")
+                    {
+                        let _ = overlay.close();
+                    }
                 }
                 _ => {}
             });

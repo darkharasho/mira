@@ -1,11 +1,22 @@
 import { useCallback, useMemo, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSettings } from "./hooks/useSettings";
 import { StartupScreen } from "./screens/StartupScreen";
 import { ViewerScreen } from "./screens/ViewerScreen";
+import { OverlayPill } from "./screens/OverlayPill";
 import { Titlebar } from "./components/Titlebar";
 import type { Settings } from "./lib/types";
 
+const WINDOW_LABEL = getCurrentWindow().label;
+
 export default function App() {
+  if (WINDOW_LABEL === "overlay") {
+    return <OverlayPill />;
+  }
+  return <MainApp />;
+}
+
+function MainApp() {
   const { settings, update } = useSettings();
   const [forceStartup, setForceStartup] = useState(false);
 

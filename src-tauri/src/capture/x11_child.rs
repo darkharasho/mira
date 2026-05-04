@@ -83,6 +83,24 @@ impl X11Child {
             tracing::warn!(?e, "x11 flush failed");
         }
     }
+
+    /// Map (show) or unmap (hide) the child window. Used so the settings
+    /// panel — drawn by the webview, normally below mpv's X11 child —
+    /// can appear by temporarily hiding mpv's window.
+    pub fn set_mapped(&self, mapped: bool) {
+        let res = if mapped {
+            self.conn.map_window(self.xid)
+        } else {
+            self.conn.unmap_window(self.xid)
+        };
+        if let Err(e) = res {
+            tracing::warn!(?e, mapped, "x11 (un)map_window failed");
+            return;
+        }
+        if let Err(e) = self.conn.flush() {
+            tracing::warn!(?e, "x11 flush failed");
+        }
+    }
 }
 
 /// Set the input shape of `xid` to the union of `rects`. Mouse events

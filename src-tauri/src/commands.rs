@@ -72,3 +72,11 @@ pub fn set_overlay_input_region(
 ) {
     state.backend.apply_overlay_input_region(&rects);
 }
+
+/// Show or hide the embedded video. Called when the settings panel
+/// opens (false) or closes (true) so the panel can render without mpv
+/// stacking on top of it.
+#[tauri::command]
+pub fn set_video_visible(state: State<AppState>, visible: bool) {
+    state.backend.set_video_visible(visible);
+}

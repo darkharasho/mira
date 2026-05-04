@@ -14,5 +14,8 @@ export const defaultSettings = () => invoke<Settings>("default_settings");
 export const setVideoRegion = (w: number, h: number, x: number, y: number) =>
   invoke<void>("set_video_region", { w, h, x, y });
 
+export const setVideoVisible = (visible: boolean) =>
+  invoke<void>("set_video_visible", { visible });
+
 export const onDevicesChanged = (cb: () => void) =>
   listen("devices-changed", () => cb());

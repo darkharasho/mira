@@ -82,6 +82,15 @@ impl MpvBackend {
         }
     }
 
+    /// Show or hide the embedded video by mapping/unmapping the child
+    /// X11 window. mpv keeps decoding behind the scenes; this just
+    /// stops it from drawing on top of our webview content.
+    pub fn set_video_visible(&self, visible: bool) {
+        if let Some(child) = self.child.lock().unwrap().as_ref() {
+            child.set_mapped(visible);
+        }
+    }
+
     fn next_id(&self) -> u64 {
         self.request_id.fetch_add(1, Ordering::Relaxed)
     }
