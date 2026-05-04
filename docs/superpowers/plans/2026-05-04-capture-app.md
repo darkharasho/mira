@@ -1079,77 +1079,129 @@ git commit -m "feat(settings): tauri-store backed useSettings hook"
 
 ---
 
-## Task 11: libmpv render API → Wayland subsurface (HIGH RISK)
+## Task 11: Sibling-window MPV with position lock (MVP path)
 
 **Files:**
 - Modify: `src-tauri/src/capture/mpv.rs`
 - Modify: `src-tauri/src/main.rs`
+- Modify: `src-tauri/tauri.conf.json`
 
-**Goal:** Make the mpv output render *inside* the Tauri window instead of a separate top-level window.
+**Goal:** mpv runs as its own borderless top-level Wayland window kept visually behind the Tauri window. The Tauri window is transparent except for the control bar / stats / settings panel content, so the mpv window underneath fills the "video region" perceptually. The two windows move and resize together via KWin scripting over D-Bus.
 
-**Approach:** On window creation, get the Tauri window's raw window handle (Wayland: `wl_surface`). Create a `wl_subsurface` parented to it. Bind libmpv's render API (`MPV_RENDER_API_TYPE_OPENGL`) with an EGL context made for that subsurface. Trigger redraws from mpv's `update` callback.
+This is the MVP path agreed with the user (sibling-window, then a future Task 21 promotes to fully-embedded libmpv render API). Visually it should look like a single app for normal usage.
 
-This is the highest-risk task. Set a 1-day budget. If still stalled, use Task 11-FALLBACK below.
-
-- [ ] **Step 1: Add render-API deps**
+- [ ] **Step 1: Add D-Bus + Wayland event deps**
 
 In `src-tauri/Cargo.toml`:
 ```toml
-khronos-egl = { version = "6", features = ["dynamic"] }
-wayland-client = "0.31"
-wayland-protocols = { version = "0.32", features = ["client", "staging"] }
-gl = "0.14"
+zbus = { version = "5", default-features = false, features = ["tokio"] }
 ```
+(`zbus` talks to `org.kde.KWin` over the user session bus.)
 
-- [ ] **Step 2: Acquire the Tauri window's Wayland surface**
+- [ ] **Step 2: Configure the Tauri window for transparent overlay**
 
-In `main.rs` `setup`, after the window is created, get the handle:
+In `src-tauri/tauri.conf.json`, set the main window:
+- `"transparent": true` (was false)
+- `"decorations": false` (already)
+- `"alwaysOnTop": false` (default)
+
+Add capability for the `tauri-plugin-window-state` is NOT needed — we do our own coordination.
+
+In `src/index.css`, ensure the document body is fully transparent (the Tauri window background should be transparent except for our explicit opaque elements). Replace:
+```css
+html, body, #root { height: 100%; margin: 0; background: #000; }
+```
+with:
+```css
+html, body, #root { height: 100%; margin: 0; background: transparent; }
+```
+The control bar / settings panel already use the `bg-glass` blurred background. The viewer's "video area" will be transparent — the mpv window underneath provides the actual pixels.
+
+- [ ] **Step 3: Configure `MpvBackend` for own-window mode**
+
+Modify `src-tauri/src/capture/mpv.rs` so that `start()` adds these properties to make mpv open its own borderless Wayland window matching the Tauri window's geometry:
 ```rust
-use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-let win = app.get_webview_window("main").unwrap();
-let handle = win.window_handle().expect("window handle").as_raw();
-let RawWindowHandle::Wayland(wl) = handle else {
-    panic!("Wayland-only build; got {handle:?}");
-};
-let wl_surface = wl.surface.as_ptr();
-// pass `wl_surface` into a new `MpvBackend::with_surface(...)` (replacing `MpvBackend::new`)
+("force-window", "yes"),
+("border", "no"),
+("title", "elgato-capture-video"),  // unique title used as a window identifier
+("idle", "no"),
+("input-default-bindings", "no"),
+("input-vo-keyboard", "no"),
 ```
+On `start`, also issue `mpv.set_property("geometry", &geometry_string)` where `geometry_string` is `WxH+X+Y` in pixels, computed from the current Tauri window geometry.
 
-- [ ] **Step 3: In `mpv.rs`, add a render context that draws into a Wayland subsurface**
+Add a public method:
+```rust
+pub fn set_geometry(&self, geometry: &str) -> Result<(), CaptureError>;
+```
+that forwards `mpv.set_property("geometry", geometry)`. Used by Step 4's window-tracking thread.
 
-This step is too platform-specific to fully predict the crate API; implement it as:
+- [ ] **Step 4: Position-lock the mpv window via KWin scripting**
 
-  1. Create a `wayland-client` connection to the parent surface, attach a `wl_subcompositor`-created `wl_subsurface` over the parent.
-  2. Use `khronos-egl` to make an EGL display from `EGL_PLATFORM_WAYLAND_KHR` for a `wl_egl_window` over the subsurface.
-  3. Construct `libmpv2::render::RenderContext` with `RenderParam::ApiType(RenderApiType::OpenGl)` and `RenderParam::OpenGlInitParams { get_proc_address, ctx: () }` where `get_proc_address` calls `egl::get_proc_address`.
-  4. In mpv's render-update callback, schedule a redraw on the GL thread that calls `RenderContext::render::<Gl>` with the subsurface's framebuffer (FBO 0) and the surface size.
-  5. On `WindowEvent::Resized`, resize the `wl_egl_window`.
+In `src-tauri/src/main.rs`, after `setup`, spawn a coordination task that:
+1. Listens to Tauri main window `Moved` and `Resized` events (via `Window::on_window_event`).
+2. On each event, computes the new geometry and calls `backend.set_geometry("WxH+X+Y")`.
+3. On the FIRST `Resumed`/`Focused` after stream start, also issues a one-shot KWin script over D-Bus to:
+   - Find the window with `WM_CLASS=mpv` AND `caption=elgato-capture-video`
+   - Call `keepBelow=true` on it
+   - Call `noBorder=true` on it (most KWin/Plasma builds honor `border=no` already, but this is belt+braces)
 
-> Reference: `libmpv2` examples directory (`examples/render-context-glutin.rs`); the official mpv render API doc (`include/mpv/render_gl.h`). Mirror the example, swapping glutin for raw EGL+Wayland.
+KWin scripting via D-Bus example:
+```rust
+let conn = zbus::Connection::session().await?;
+let proxy = zbus::Proxy::new(
+    &conn, "org.kde.KWin", "/Scripting", "org.kde.kwin.Scripting",
+).await?;
+let script = r#"
+  workspace.windowList().forEach(w => {
+    if (w.resourceClass === "mpv" && w.caption === "elgato-capture-video") {
+      w.keepBelow = true;
+      w.noBorder = true;
+    }
+  });
+"#;
+let id: i32 = proxy.call("loadScript", &(script, "elgato-capture-pos-lock")).await?;
+proxy.call_method("start", &(id,)).await?;
+```
+(Adapt `Proxy` API per zbus 5.)
 
-- [ ] **Step 4: Acceptance test**
+If KWin scripting access is denied (some KWin builds require privilege), the position-locking still works via mpv's `geometry` property — only the `keepBelow` is a nice-to-have. Wrap the D-Bus call in a `tracing::warn!` on failure and continue.
 
-Launch the app, hardcode `cfg = { video_device: "/dev/video2", audio_device: "hw:6,0", pix_fmt: "yuyv422", volume: 100, muted: false }` via devtools `invoke("start_stream", { cfg })`. The capture must appear inside the Tauri window, not as a separate window. Resizing the Tauri window must resize the video. Audio must play.
+- [ ] **Step 5: Quit coordination**
 
-- [ ] **Step 5: Commit**
+When the Tauri main window is closed, the `MpvBackend` is dropped (its `Drop` should already close the libmpv instance, which closes mpv's window). When mpv's window is somehow closed first (user closes it via window manager), the next `start_stream` call will create a fresh instance.
+
+If desired, listen for mpv's `end-file` event and emit a `stream-ended` Tauri event — but skip this for MVP, the user can just re-Start from the panel.
+
+- [ ] **Step 6: Build inside the distrobox**
 
 ```bash
-git add src-tauri
-git commit -m "feat(capture): render mpv into a Wayland subsurface inside the tauri window"
+distrobox enter elgato-dev -- bash -lc "cd /var/home/mstephens/Documents/GitHub/linux-game-streamer/src-tauri && cargo build"
 ```
+Expected: clean.
 
-### Task 11-FALLBACK: Sibling top-level mpv window (only if Task 11 stalls >1 day)
+- [ ] **Step 7: Manual acceptance test (run on the host)**
 
-If render-API embedding proves intractable, change `MpvBackend` to:
+```bash
+distrobox enter elgato-dev -- bash -lc "cd /var/home/mstephens/Documents/GitHub/linux-game-streamer && npm run tauri dev"
+```
+The Tauri window opens transparent. In devtools console:
+```js
+await window.__TAURI__.core.invoke("start_stream", { cfg: {
+  video_device: "/dev/video2", audio_device: "hw:4,0", pix_fmt: "yuyv422",
+  volume: 100, muted: false
+}})
+```
+A second mpv window appears, sized to fit behind the Tauri window. Drag/resize the Tauri window — mpv tracks. Use `arecord -l` to confirm the actual ALSA card index for the Elgato; the user's index varies between boots.
 
-1. Set the libmpv property `wid` to `0` (force own window) — already the default if no render context is attached. So just don't attach one.
-2. After `loadfile`, position-lock the mpv window to the Tauri window:
-   - Get the mpv window via libmpv's `window-id` property (X11) or by spawning mpv in `--no-input-default-bindings` mode and using `kdotool` / `wlrctl` to track and reposition. On KDE Wayland, use the KWin scripting interface (`org.kde.KWin`) over D-Bus to subscribe to window geometry events and call `setGeometry` on the mpv window keyed by `WM_CLASS=mpv`.
-   - Mirror the Tauri window's geometry (minus the top 32px reserved for our titlebar) onto the mpv window on every move/resize event.
-3. Hide the mpv window when the Tauri window is minimized; show on restore.
-4. The control bar and stats overlay continue to live in the Tauri webview, painted *over* the mpv window — since the mpv window sits beneath, use `setKeepBelow` on the mpv window via KWin and `setKeepAbove` on the Tauri window.
+If the geometry tracking is jittery, fine — note in concerns; Task 21 (embedded) will solve it permanently.
 
-Document this fallback in `README.md` under "Known limitations" if used.
+- [ ] **Step 8: Commit**
+
+```bash
+git add src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/src/capture/mpv.rs src-tauri/src/main.rs src-tauri/tauri.conf.json src/index.css
+git commit -m "feat(capture): sibling-window mpv with kwin position lock"
+```
 
 ---
 
@@ -2006,7 +2058,8 @@ git commit -m "docs: build steps and manual smoke checklist"
 | udev hotplug | 5 |
 | CaptureBackend trait | 6 |
 | libmpv profile parity | 7 |
-| Wayland subsurface render | 11 |
+| Sibling-window MPV (MVP) | 11 |
+| Embedded MPV via render API (polish) | 21 |
 | Tauri command surface | 8 |
 | Frontend IPC types | 9 |
 | Startup screen + auto-default | 14, 18 |
@@ -2025,6 +2078,30 @@ git commit -m "docs: build steps and manual smoke checklist"
 
 No gaps. The `elgato-capture.sh` script is intentionally untouched (no task modifies it).
 
-**Placeholder scan:** No "TBD" / "TODO" / generic "add error handling" steps. Task 11 is high-risk by nature — its acceptance is concrete (stream renders inside the Tauri window, resizes, audio plays) and a fallback (Task 11-FALLBACK) is explicit.
+**Placeholder scan:** No "TBD" / "TODO" / generic "add error handling" steps. Task 11 ships a sibling-window MVP that the user accepted; Task 21 (added below) replaces it with embedded rendering as a later polish pass.
+
+---
+
+## Task 21: Embedded video — libmpv render API + Wayland subsurface (deferred polish)
+
+**Status:** Deferred. Implement only after the rest of the plan ships and the user wants to remove the seam between the Tauri window and the mpv window.
+
+**Goal:** Replace Task 11's two-window architecture with a single Tauri window that renders the mpv video into a Wayland subsurface owned by the Rust backend, using libmpv's render API + EGL.
+
+**Approach (preserved from the original Task 11 design):**
+
+1. Add deps `khronos-egl = { version = "6", features = ["dynamic"] }`, `wayland-client = "0.31"`, `wayland-protocols = { version = "0.32", features = ["client", "staging"] }`, `gl = "0.14"`.
+2. In `main.rs` setup, acquire the Tauri window's Wayland surface via `raw-window-handle`.
+3. Create a `wl_subcompositor`-backed `wl_subsurface` over that parent surface; wrap it in a `wl_egl_window` and an EGL context.
+4. Replace `MpvBackend::start`'s sibling-window properties (`force-window`, `border`, `geometry`) with a `libmpv2::render::RenderContext` bound to that EGL context.
+5. Drive redraws from mpv's render-update callback. On `WindowEvent::Resized`, resize the `wl_egl_window`.
+6. Drop the KWin scripting + zbus + geometry-tracking code — the subsurface follows the parent natively.
+7. Drop `transparent: true` from the Tauri window once the subsurface owns the video region (or keep it; either works).
+
+**Reference:** `libmpv2`'s `examples/render-context-glutin.rs` (mirror it, swap glutin for raw EGL+Wayland), and the upstream mpv `include/mpv/render_gl.h`.
+
+**Acceptance:** capture renders inside the Tauri window with no second top-level. Resizing is jitter-free. Audio matches Task 11.
+
+This task is intentionally vague on Wayland subsurface plumbing because the API surface is platform-specific and changes across Wayland-protocols versions. Treat it as a research-and-implement spike, not a copy-paste.
 
 **Type consistency:** `Settings`, `StreamConfig`, `StreamStats`, `DeviceList`, `VideoDevice`, `AudioDevice`, `PixFormat` are defined once in Rust and mirrored in TS with matching field names. IPC command names are identical in `commands.rs` and `lib/ipc.ts`. Hotkey strings (`f`/`m`/`s`/`p`/`q`/`escape`) match the spec's table.
