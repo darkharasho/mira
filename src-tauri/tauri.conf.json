@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Elgato Capture",
   "version": "0.1.0",
-  "identifier": "com.tauri.dev",
+  "identifier": "com.darkharasho.elgato-capture",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -30,7 +30,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["appimage", "deb", "rpm"],
+    "category": "Video",
+    "shortDescription": "Low-latency Elgato capture viewer",
+    "longDescription": "A polished Linux/Wayland viewer for Elgato capture cards using libmpv.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -38,6 +41,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "linux": {
+      "deb": { "depends": ["libmpv2 | libmpv1", "libudev1", "libasound2"] },
+      "rpm": { "depends": ["mpv-libs", "systemd-libs", "alsa-lib"] }
+    },
     "android": {
       "debugApplicationIdSuffix": ".debug"
     }

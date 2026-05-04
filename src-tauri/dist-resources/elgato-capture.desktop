@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Elgato Capture
+Comment=Low-latency Elgato Game Capture viewer
+Exec=elgato-capture %U
+Icon=elgato-capture
+Categories=AudioVideo;Video;
+Terminal=false
+StartupWMClass=Elgato Capture
