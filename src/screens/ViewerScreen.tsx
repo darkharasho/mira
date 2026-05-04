@@ -286,27 +286,27 @@ function PillBtn({
   showTooltip?: boolean;
 }) {
   return (
-    <span className="relative group/tip">
+    <span className="relative group/tip inline-flex">
       <button
         onClick={onClick}
         aria-label={title}
-        className={`grid place-items-center w-8 h-8 rounded-full transition-all duration-150
-                    active:scale-95
+        className={`grid place-items-center w-9 h-9 rounded-full transition-all duration-150
+                    active:scale-90
                     ${active
-                      ? "bg-accent/20 text-accent shadow-[0_0_12px_-2px_rgba(92,240,138,0.5)] hover:bg-accent/30"
-                      : "text-zinc-400 hover:bg-white/15 hover:text-white"}`}
+                      ? "bg-accent/25 text-accent shadow-[0_0_14px_-2px_rgba(92,240,138,0.6)] hover:bg-accent/40 hover:scale-105"
+                      : "text-zinc-400 hover:bg-white/20 hover:text-white hover:scale-110"}`}
       >
         {children}
       </button>
       {showTooltip && (
         <span
-          className="absolute -top-9 left-1/2 -translate-x-1/2 px-2 py-1 rounded-md
-                     bg-zinc-900/95 backdrop-blur-sm border border-white/10
-                     text-[10px] font-medium text-zinc-100 whitespace-nowrap
+          className="absolute -top-10 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-md
+                     bg-zinc-950/95 border border-white/15
+                     text-[11px] font-medium text-white whitespace-nowrap
                      opacity-0 group-hover/tip:opacity-100
                      translate-y-1 group-hover/tip:translate-y-0
-                     transition-all duration-150 pointer-events-none
-                     shadow-[0_4px_12px_-4px_rgba(0,0,0,0.6)]"
+                     transition-all duration-150 pointer-events-none z-50
+                     shadow-[0_6px_20px_-4px_rgba(0,0,0,0.8)]"
         >
           {title}
         </span>
