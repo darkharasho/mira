@@ -119,7 +119,7 @@ export function ViewerScreen({
     "—";
 
   return (
-    <div className="h-full flex flex-col p-5">
+    <div className="h-full flex flex-col p-5 relative">
       <header className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className={`w-2 h-2 rounded-full shrink-0 ${dotClass}`} />
@@ -159,7 +159,7 @@ export function ViewerScreen({
         </div>
       )}
 
-      <section className="flex-1 rounded-xl border border-white/10 bg-zinc-900/60 p-4 flex flex-col">
+      <section className="flex-1 rounded-xl border border-white/10 bg-zinc-900/60 p-4 flex flex-col pb-20">
         {settings.show_stats && stats ? (
           <div className="font-mono text-[11px] text-zinc-400 leading-relaxed grid grid-cols-2 gap-y-1.5">
             <div className="text-zinc-500">Resolution</div>
@@ -197,40 +197,44 @@ export function ViewerScreen({
         </div>
       </section>
 
-      <footer className="mt-4 flex items-center gap-2">
-        <ActionBtn onClick={onScreenshot} title="Screenshot (P)">
-          <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none">
-            <rect x="1.5" y="3.5" width="13" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
-            <circle cx="8" cy="8.5" r="2.5" stroke="currentColor" strokeWidth="1.4" />
-            <path d="M5.5 3.5L6.5 2h3l1 1.5" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-          </svg>
-        </ActionBtn>
-        <ActionBtn onClick={onMute} title="Mute (M)" active={settings.muted}>
-          {settings.muted ? (
+      {/* Floating control pill — Dark Glass aesthetic */}
+      <div className="absolute left-1/2 -translate-x-1/2 bottom-6 pointer-events-none">
+        <div className="pointer-events-auto flex items-center gap-1.5 px-2 py-1.5 rounded-full
+                        bg-zinc-900/85 backdrop-blur-xl border border-white/10
+                        shadow-[0_8px_24px_-12px_rgba(0,0,0,0.8)]">
+          <PillBtn onClick={onScreenshot} title="Screenshot (P)">
             <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none">
-              <path d="M8 3L4.5 6H2v4h2.5L8 13V3z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-              <path d="M11 6l3 4M14 6l-3 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+              <rect x="1.5" y="3.5" width="13" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
+              <circle cx="8" cy="8.5" r="2.5" stroke="currentColor" strokeWidth="1.4" />
+              <path d="M5.5 3.5L6.5 2h3l1 1.5" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
             </svg>
-          ) : (
+          </PillBtn>
+          <PillBtn onClick={onMute} title="Mute (M)" active={settings.muted}>
+            {settings.muted ? (
+              <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none">
+                <path d="M8 3L4.5 6H2v4h2.5L8 13V3z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+                <path d="M11 6l3 4M14 6l-3 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none">
+                <path d="M8 3L4.5 6H2v4h2.5L8 13V3z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+                <path d="M11 6c.8.8.8 3.2 0 4M13 4c1.5 1.5 1.5 6.5 0 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+              </svg>
+            )}
+          </PillBtn>
+          <PillBtn onClick={onToggleStats} title="Toggle stats (S)" active={settings.show_stats}>
             <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none">
-              <path d="M8 3L4.5 6H2v4h2.5L8 13V3z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-              <path d="M11 6c.8.8.8 3.2 0 4M13 4c1.5 1.5 1.5 6.5 0 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+              <path d="M2 13V8m4 5V5m4 8V9m4 4V3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
             </svg>
-          )}
-        </ActionBtn>
-        <ActionBtn onClick={onToggleStats} title="Toggle stats (S)" active={settings.show_stats}>
-          <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none">
-            <path d="M2 13V8m4 5V5m4 8V9m4 4V3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-          </svg>
-        </ActionBtn>
-        <div className="flex-1" />
-        <button
-          onClick={onResetToStartup}
-          className="text-xs text-zinc-500 hover:text-zinc-200 transition-colors px-2 py-1.5"
-        >
-          Change source
-        </button>
-      </footer>
+          </PillBtn>
+          <span className="w-px h-4 bg-white/10 mx-0.5" />
+          <PillBtn onClick={onResetToStartup} title="Change source">
+            <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none">
+              <path d="M3 7l3-3 3 3M6 4v6a3 3 0 0 0 3 3h4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </PillBtn>
+        </div>
+      </div>
 
       <SettingsPanel
         open={panelOpen}
@@ -246,7 +250,7 @@ export function ViewerScreen({
   );
 }
 
-function ActionBtn({
+function PillBtn({
   children,
   onClick,
   title,
@@ -261,10 +265,10 @@ function ActionBtn({
     <button
       onClick={onClick}
       title={title}
-      className={`grid place-items-center w-9 h-9 rounded-lg border transition-colors
+      className={`grid place-items-center w-8 h-8 rounded-full transition-colors
                   ${active
-                    ? "bg-accent/15 border-accent/40 text-accent"
-                    : "bg-zinc-900/80 border-white/10 text-zinc-300 hover:bg-zinc-800 hover:border-white/20"}`}
+                    ? "bg-accent/15 text-accent"
+                    : "text-zinc-300 hover:bg-white/10 hover:text-white"}`}
     >
       {children}
     </button>
