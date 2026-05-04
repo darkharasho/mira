@@ -12,6 +12,27 @@
 
 **High-risk task call-out:** Task 11 (libmpv render API + Wayland subsurface). If it stalls for >1 day, fall back to Task 11-FALLBACK (sibling top-level mpv window position-locked to Tauri).
 
+## Build environment
+
+The host is **Bazzite (immutable Fedora) + KDE Plasma + Wayland**. Bazzite excludes `mesa-*` from rpm-ostree to protect its custom gaming-tuned mesa, which makes layering `mpv-libs-devel` on the host a bad idea (it pulls `mesa-libGLU-devel`). All Rust/JS development happens inside a Fedora distrobox; the resulting AppImage runs natively on the host since it bundles its own libs.
+
+**Container setup (one-time, already done):**
+
+```bash
+distrobox create --name elgato-dev --image registry.fedoraproject.org/fedora-toolbox:42
+distrobox enter elgato-dev
+sudo dnf install -y alsa-lib-devel mpv-libs-devel libudev-devel \
+  webkit2gtk4.1-devel gcc gcc-c++ pkgconf-pkg-config nodejs cargo
+```
+
+**Running build/test commands.** Every `cargo`, `npm`, and `npx` command in this plan must run inside the distrobox. From the host:
+
+```bash
+distrobox enter elgato-dev -- bash -lc "cd /var/home/mstephens/Documents/GitHub/linux-game-streamer && <command>"
+```
+
+Distrobox auto-mounts `$HOME`, so paths are identical inside and out. `git` commands run on the host (distrobox shares the repo).
+
 ---
 
 ## File Structure
@@ -82,20 +103,15 @@ Each Rust module has a single responsibility. The React side is split by hooks (
 
 - [ ] **Step 1: Verify prerequisites**
 
-Run:
+Inside the `elgato-dev` distrobox (see "Build environment" above):
 ```bash
-node --version          # expect ≥ 20
-cargo --version
-pkg-config --exists libmpv && echo OK || echo MISSING
-pkg-config --exists alsa  && echo OK || echo MISSING
-pkg-config --exists libudev && echo OK || echo MISSING
+distrobox enter elgato-dev -- bash -lc "node --version && cargo --version && \
+  pkg-config --exists alsa && echo alsa OK && \
+  pkg-config --exists mpv && echo mpv OK && \
+  pkg-config --exists libudev && echo udev OK"
 ```
 
-If `MISSING`, install on Bazzite:
-```bash
-sudo rpm-ostree install mpv-libs-devel alsa-lib-devel systemd-devel webkit2gtk4.1-devel
-# reboot, then re-run the pkg-config checks
-```
+If anything is missing, the container is misconfigured — re-run the dnf install from the "Build environment" section. Do NOT layer these on the host.
 
 - [ ] **Step 2: Initialize npm package**
 
@@ -1936,10 +1952,20 @@ Low-latency Linux/Wayland viewer for Elgato capture cards.
 
 ## Build
 
+The host is Bazzite (immutable Fedora). All builds happen inside a Fedora distrobox to avoid layering devel packages on the host.
+
 ```bash
-npm install
-npm run tauri build -- --bundles appimage
+distrobox create --name elgato-dev --image registry.fedoraproject.org/fedora-toolbox:42
+distrobox enter elgato-dev -- bash -lc "sudo dnf install -y \
+  alsa-lib-devel mpv-libs-devel libudev-devel webkit2gtk4.1-devel \
+  gcc gcc-c++ pkgconf-pkg-config nodejs cargo"
+
+# Subsequently, build inside the container:
+distrobox enter elgato-dev -- bash -lc "cd /path/to/linux-game-streamer && \
+  npm install && npm run tauri build -- --bundles appimage"
 ```
+
+The resulting AppImage runs natively on the host — it bundles libmpv at runtime.
 
 ## Manual smoke checklist
 
