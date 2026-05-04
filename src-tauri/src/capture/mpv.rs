@@ -122,13 +122,6 @@ impl CaptureBackend for MpvBackend {
                 ("demuxer-lavf-probesize", "32"),
                 ("demuxer-lavf-analyzeduration", "0"),
                 ("title", "Elgato Capture"),
-                // Force the legacy GL backend. The default `gpu-next` /
-                // libplacebo Vulkan path on Wayland tries dmabuf imports
-                // which conflict with Tauri's WebKitGTK already holding
-                // Wayland GPU resources in this process. The script works
-                // because it doesn't share a process with a webview.
-                ("vo", "gpu"),
-                ("gpu-api", "opengl"),
             ] {
                 tracing::debug!(prop = k, val = v, "pre-init option");
                 init.set_property(k, v.to_string()).map_err(|e| {
