@@ -223,11 +223,11 @@ export function ViewerScreen({
 
           {/* Volume group: mute icon + hover-reveal slider */}
           <div className="group/vol flex items-center">
-            <PillBtn onClick={onMute} title="Mute (M)" active={settings.muted}>
+            <PillBtn onClick={onMute} title={settings.muted ? "Unmute (M)" : "Mute (M)"} active={settings.muted}>
               {muteIcon}
             </PillBtn>
             <div className="overflow-hidden flex items-center
-                            w-0 group-hover/vol:w-32
+                            w-0 group-hover/vol:w-44
                             opacity-0 group-hover/vol:opacity-100
                             transition-all duration-200 ease-out">
               <input
@@ -236,8 +236,11 @@ export function ViewerScreen({
                 max={150}
                 value={settings.volume}
                 onChange={(e) => onChangeSettings({ volume: Number(e.target.value) })}
-                className="w-28 accent-accent ml-2 mr-1"
+                className="w-32 accent-accent ml-2"
               />
+              <span className="text-[10px] font-mono text-zinc-400 w-8 text-right tabular-nums">
+                {settings.volume}
+              </span>
             </div>
           </div>
 
@@ -274,22 +277,40 @@ function PillBtn({
   onClick,
   title,
   active,
+  showTooltip = true,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   title: string;
   active?: boolean;
+  showTooltip?: boolean;
 }) {
   return (
-    <button
-      onClick={onClick}
-      title={title}
-      className={`grid place-items-center w-8 h-8 rounded-full transition-colors
-                  ${active
-                    ? "bg-accent/15 text-accent"
-                    : "text-zinc-300 hover:bg-white/10 hover:text-white"}`}
-    >
-      {children}
-    </button>
+    <span className="relative group/tip">
+      <button
+        onClick={onClick}
+        aria-label={title}
+        className={`grid place-items-center w-8 h-8 rounded-full transition-all duration-150
+                    active:scale-95
+                    ${active
+                      ? "bg-accent/20 text-accent shadow-[0_0_12px_-2px_rgba(92,240,138,0.5)] hover:bg-accent/30"
+                      : "text-zinc-400 hover:bg-white/15 hover:text-white"}`}
+      >
+        {children}
+      </button>
+      {showTooltip && (
+        <span
+          className="absolute -top-9 left-1/2 -translate-x-1/2 px-2 py-1 rounded-md
+                     bg-zinc-900/95 backdrop-blur-sm border border-white/10
+                     text-[10px] font-medium text-zinc-100 whitespace-nowrap
+                     opacity-0 group-hover/tip:opacity-100
+                     translate-y-1 group-hover/tip:translate-y-0
+                     transition-all duration-150 pointer-events-none
+                     shadow-[0_4px_12px_-4px_rgba(0,0,0,0.6)]"
+        >
+          {title}
+        </span>
+      )}
+    </span>
   );
 }
