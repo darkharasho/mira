@@ -221,10 +221,6 @@ export function ViewerScreen({
             </svg>
           </PillBtn>
 
-          <PillBtn onClick={onMute} title={settings.muted ? "Unmute (M)" : "Mute (M)"} active={settings.muted}>
-            {muteIcon}
-          </PillBtn>
-
           <PillBtn onClick={onToggleStats} title="Toggle stats (S)" active={settings.show_stats}>
             <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none">
               <path d="M2 13V8m4 5V5m4 8V9m4 4V3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
@@ -233,20 +229,33 @@ export function ViewerScreen({
 
           <span className="w-px h-4 bg-white/10 mx-0.5" />
 
-          {/* Always-visible volume slider */}
-          <div className="flex items-center gap-2 px-2">
-            <input
-              type="range"
-              min={0}
-              max={150}
-              value={settings.volume}
-              onChange={(e) => onChangeSettings({ volume: Number(e.target.value) })}
-              className="w-36 accent-accent"
-              aria-label={`Volume ${settings.volume}`}
-            />
-            <span className="text-[10px] font-mono text-zinc-400 w-7 text-right tabular-nums select-none">
-              {settings.volume}
-            </span>
+          {/* Mute button anchored right, slider expands leftward on hover */}
+          <div className="group/vol flex items-center">
+            <div
+              className="overflow-hidden flex items-center
+                         w-0 group-hover/vol:w-44
+                         opacity-0 group-hover/vol:opacity-100
+                         transition-all duration-200 ease-out"
+            >
+              <span className="text-[10px] font-mono text-zinc-400 w-8 text-right tabular-nums select-none mr-2">
+                {settings.volume}
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={150}
+                value={settings.volume}
+                onChange={(e) => onChangeSettings({ volume: Number(e.target.value) })}
+                className="w-32 accent-accent mr-2"
+              />
+            </div>
+            <PillBtn
+              onClick={onMute}
+              title={settings.muted ? "Unmute (M)" : "Mute (M)"}
+              active={settings.muted}
+            >
+              {muteIcon}
+            </PillBtn>
           </div>
         </div>
       </div>
