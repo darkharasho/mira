@@ -9,6 +9,24 @@ use libmpv2::Mpv;
 
 use super::{CaptureBackend, CaptureError, StreamConfig, StreamStats};
 
+/// libmpv's `mpv_create` returns NULL if `LC_NUMERIC` isn't `C` (or another
+/// dot-decimal locale). Tauri inherits the user's locale, so call this
+/// before every Mpv::new().
+fn force_c_numeric_locale() {
+    use std::ffi::CString;
+    use std::sync::Once;
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        let c = CString::new("C").unwrap();
+        // Safety: setlocale(LC_NUMERIC, "C") on glibc is async-signal-safe
+        // and idempotent. We hold no locks across the call.
+        unsafe {
+            libc::setlocale(libc::LC_NUMERIC, c.as_ptr());
+        }
+        tracing::info!("forced LC_NUMERIC=C for libmpv");
+    });
+}
+
 pub struct MpvBackend {
     inner: Mutex<Option<Mpv>>,
 }
@@ -75,6 +93,11 @@ impl CaptureBackend for MpvBackend {
         if cfg.pix_fmt.is_empty() {
             return Err(CaptureError::Other("pix_fmt is empty".into()));
         }
+
+        // libmpv refuses to create the instance under a non-dot-decimal
+        // locale (Tauri inherits the user's locale; on Bazzite this can be
+        // en_US.UTF-8 with regional overrides). Force LC_NUMERIC=C up front.
+        force_c_numeric_locale();
 
         // Build the mpv instance and apply every property post-init via
         // a single `try_set` helper so any failing key/value gets reported

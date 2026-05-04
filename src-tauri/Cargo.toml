@@ -25,6 +25,7 @@ libmpv2 = "3"
 v4l = "0.14"
 alsa = "0.9"
 udev = "0.9"
+libc = "0.2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 raw-window-handle = "0.6"
