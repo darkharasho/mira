@@ -137,10 +137,6 @@ impl CaptureBackend for MpvBackend {
                     tracing::error!(prop = "demuxer-lavf-o", val = %lavf_opts, ?e, "pre-init option failed");
                     e
                 })?;
-            // Note: `audio-file` is option-only — libmpv's pre-init
-            // set_property still goes through mpv_set_property which
-            // returns PROPERTY_NOT_FOUND for it. We attach the audio
-            // track via the runtime `audio-add` command after loadfile.
             let _ = audio_device;
             Ok(())
         })
@@ -152,18 +148,20 @@ impl CaptureBackend for MpvBackend {
         mpv.set_property("mute", if cfg.muted { "yes" } else { "no" }.to_string())
             .map_err(Self::ctx("set mute"))?;
 
+        // Attach the ALSA capture device as an audio source for the next
+        // loadfile. The `audio-files` property is a list and is read by
+        // the next file load. Setting it before loadfile mirrors what
+        // --audio-file=... does on the CLI.
+        let audio_url = format!("av://alsa:{}", cfg.audio_device);
+        tracing::info!(audio = %audio_url, "audio-files");
+        mpv.set_property("audio-files", audio_url.clone())
+            .map_err(Self::ctx("set audio-files"))?;
+
         // Begin playback of the V4L2 device — three-arg form for older
         // mpv compatibility (no `index` parameter).
         tracing::info!(video = %cfg.video_device, "loadfile");
         mpv.command("loadfile", &[&cfg.video_device, "replace"])
             .map_err(Self::ctx("loadfile"))?;
-
-        // Attach the ALSA capture device as an audio track. Must come
-        // after loadfile because audio-add operates on the current file.
-        let audio_url = format!("av://alsa:{}", cfg.audio_device);
-        tracing::info!(audio = %audio_url, "audio-add");
-        mpv.command("audio-add", &[&audio_url, "select"])
-            .map_err(Self::ctx("audio-add"))?;
 
         *guard = Some(mpv);
         tracing::info!("mpv stream started");
