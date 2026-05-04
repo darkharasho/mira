@@ -1,6 +1,11 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@theme {
+  --color-glass: rgba(20, 22, 30, 0.55);
+  --color-accent: #5cf08a;
+  --color-warn: #f0b35c;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
 
 html, body, #root { height: 100%; margin: 0; background: #000; }
 *, *::before, *::after { box-sizing: border-box; }

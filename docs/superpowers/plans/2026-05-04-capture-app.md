@@ -103,7 +103,7 @@ sudo rpm-ostree install mpv-libs-devel alsa-lib-devel systemd-devel webkit2gtk4.
 npm init -y
 npm pkg set name="elgato-capture" type="module" private=true
 npm pkg set scripts.dev="vite" scripts.build="vite build" scripts.tauri="tauri"
-npm install --save-dev vite @vitejs/plugin-react typescript @types/react @types/react-dom tailwindcss postcss autoprefixer @tauri-apps/cli@^2
+npm install --save-dev vite @vitejs/plugin-react typescript @types/react @types/react-dom tailwindcss@^4 @tailwindcss/vite@^4 @tauri-apps/cli@^2
 npm install react react-dom @tauri-apps/api@^2 @tauri-apps/plugin-store@^2
 ```
 
@@ -112,9 +112,10 @@ npm install react react-dom @tauri-apps/api@^2 @tauri-apps/plugin-store@^2
 ```ts
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   clearScreen: false,
   server: { port: 1420, strictPort: true },
   envPrefix: ["VITE_", "TAURI_ENV_*"],
@@ -144,31 +145,9 @@ export default defineConfig({
 }
 ```
 
-- [ ] **Step 5: Initialize Tailwind**
+- [ ] **Step 5: Tailwind v4 theme tokens**
 
-```bash
-npx tailwindcss init -p
-```
-
-Then overwrite `tailwind.config.ts`:
-```ts
-import type { Config } from "tailwindcss";
-export default {
-  content: ["./index.html", "./src/**/*.{ts,tsx}"],
-  theme: {
-    extend: {
-      colors: {
-        glass: "rgba(20,22,30,0.55)",
-        accent: "#5cf08a",
-        warn: "#f0b35c",
-      },
-      fontFamily: {
-        mono: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
-      },
-    },
-  },
-} satisfies Config;
-```
+Tailwind v4 has no JS config file and no `init` command. Theme tokens live in CSS via `@theme`. The actual `@theme` block is written into `src/index.css` in step 7 below. No separate config file to create here.
 
 - [ ] **Step 6: Write `index.html`**
 
@@ -190,9 +169,14 @@ export default {
 - [ ] **Step 7: Write `src/index.css`**
 
 ```css
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@theme {
+  --color-glass: rgba(20, 22, 30, 0.55);
+  --color-accent: #5cf08a;
+  --color-warn: #f0b35c;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
 
 html, body, #root { height: 100%; margin: 0; background: #000; }
 *, *::before, *::after { box-sizing: border-box; }
