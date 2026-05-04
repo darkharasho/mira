@@ -17,5 +17,9 @@ export const setVideoRegion = (w: number, h: number, x: number, y: number) =>
 export const setVideoVisible = (visible: boolean) =>
   invoke<void>("set_video_visible", { visible });
 
+export const setOverlayInputRegion = (
+  rects: Array<[number, number, number, number]>,
+) => invoke<void>("set_overlay_input_region", { rects });
+
 export const onDevicesChanged = (cb: () => void) =>
   listen("devices-changed", () => cb());

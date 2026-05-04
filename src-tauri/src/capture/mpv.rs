@@ -207,11 +207,11 @@ impl CaptureBackend for MpvBackend {
         let mut cmd = Command::new(&program);
         if let Some(child_xid) = self.child.lock().unwrap().as_ref().map(|c| c.xid) {
             cmd.arg(format!("--wid={child_xid}"))
-                // mpv's `--wid` is X11-only; force the X11 GPU context
-                // (default `auto` prefers Wayland whenever WAYLAND_DISPLAY
-                // is set, which crashes with dmabuf import errors against
-                // an X11-embedded window).
-                .arg("--gpu-context=x11egl");
+                // GLX (x11) is more robust through XWayland than x11egl,
+                // which often falls back to a software renderer here.
+                .arg("--gpu-context=x11")
+                .arg("--gpu-api=opengl")
+                .arg("--hwdec=no");
             cmd.env_remove("WAYLAND_DISPLAY");
             tracing::info!(child_xid, "embedding mpv into our child X11 window");
         }
