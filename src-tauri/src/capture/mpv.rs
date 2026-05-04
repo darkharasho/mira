@@ -49,6 +49,9 @@ impl CaptureBackend for MpvBackend {
 
         let mpv = Mpv::with_initializer(move |init| {
             // Pairs of (key, value) string properties.
+            // Match the reference shell script's flag set exactly. The
+            // script's mpv opens its own window with default decorations;
+            // we don't override that.
             let pairs: &[(&str, &str)] = &[
                 ("profile", "low-latency"),
                 ("cache", "no"),
@@ -59,12 +62,7 @@ impl CaptureBackend for MpvBackend {
                 ("demuxer-lavf-format", "video4linux2"),
                 ("demuxer-lavf-probesize", "32"),
                 ("demuxer-lavf-analyzeduration", "0"),
-                ("force-window", "yes"),
-                ("title", "Elgato Capture — Video"),
-                ("idle", "no"),
-                ("input-default-bindings", "no"),
-                ("input-vo-keyboard", "no"),
-                ("keep-open", "no"),
+                ("title", "Elgato Capture"),
             ];
             for (k, v) in pairs {
                 init.set_property(k, (*v).to_string())?;

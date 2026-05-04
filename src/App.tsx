@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useSettings } from "./hooks/useSettings";
 import { StartupScreen } from "./screens/StartupScreen";
 import { ViewerScreen } from "./screens/ViewerScreen";
+import { Titlebar } from "./components/Titlebar";
 import type { Settings } from "./lib/types";
 
 export default function App() {
@@ -23,21 +24,24 @@ export default function App() {
     [update],
   );
 
-  if (!settings) {
-    return (
-      <div className="grid place-items-center h-full text-white/50 text-sm">
-        Loading…
-      </div>
-    );
-  }
-
-  return showStartup ? (
-    <StartupScreen initial={settings} onStart={onStart} />
-  ) : (
-    <ViewerScreen
-      settings={settings}
-      onChangeSettings={update}
-      onResetToStartup={() => setForceStartup(true)}
-    />
+  return (
+    <div className="h-full flex flex-col">
+      <Titlebar />
+      <main className="flex-1 min-h-0">
+        {!settings ? (
+          <div className="grid place-items-center h-full text-zinc-500 text-sm">
+            Loading…
+          </div>
+        ) : showStartup ? (
+          <StartupScreen initial={settings} onStart={onStart} />
+        ) : (
+          <ViewerScreen
+            settings={settings}
+            onChangeSettings={update}
+            onResetToStartup={() => setForceStartup(true)}
+          />
+        )}
+      </main>
+    </div>
   );
 }
