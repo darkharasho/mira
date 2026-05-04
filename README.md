@@ -34,13 +34,16 @@ The resulting AppImage runs natively on the host — Tauri bundles the runtime l
 
 ## Develop
 
+These npm scripts run from the host and shell into the `elgato-dev` distrobox for you:
+
 ```bash
-# Inside the distrobox
-cd /path/to/linux-game-streamer
-npm run tauri dev          # full app
-cargo test --manifest-path src-tauri/Cargo.toml   # rust unit tests
-npm run build              # vite + tsc sanity check
+npm run app:dev      # tauri dev (full app, hot reload)
+npm run app:build    # release AppImage
+npm run app:test     # rust unit tests
+npm run app:shell    # drop into the container
 ```
+
+Vite-only commands (`npm run dev`, `npm run build`) run on the host as usual — they don't need libmpv/ALSA headers.
 
 ## Hotkeys
 

@@ -10,7 +10,11 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "vite",
     "build": "vite build",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "app:dev": "distrobox enter elgato-dev -- bash -lc \"cd $(pwd) && npm run tauri dev\"",
+    "app:build": "distrobox enter elgato-dev -- bash -lc \"cd $(pwd) && npm run tauri build -- --bundles appimage\"",
+    "app:test": "distrobox enter elgato-dev -- bash -lc \"cd $(pwd)/src-tauri && cargo test\"",
+    "app:shell": "distrobox enter elgato-dev"
   },
   "repository": {
     "type": "git",
