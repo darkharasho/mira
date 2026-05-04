@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+/* Tailwind v4 wraps `hover:` in @media (hover: hover) by default to avoid
+   sticky-tap on touch devices. WebKitGTK (Tauri's webview on Linux) often
+   reports `hover: none`, which suppresses every hover rule. Override the
+   variant so `hover:` applies on real :hover regardless. */
+@custom-variant hover (&:hover);
+
 @theme {
   --color-glass: rgba(20, 22, 30, 0.55);
   --color-accent: #5cf08a;
