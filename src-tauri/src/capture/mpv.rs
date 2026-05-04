@@ -95,6 +95,26 @@ impl Default for MpvBackend {
     }
 }
 
+/// Resolve the mpv executable to use. Falls back to common absolute
+/// paths when the inherited `PATH` doesn't contain a hit (Tauri's child
+/// environment can be missing /usr/bin in some sandboxes).
+fn mpv_executable() -> String {
+    if let Ok(path) = std::env::var("PATH") {
+        for dir in path.split(':').filter(|s| !s.is_empty()) {
+            let candidate = std::path::Path::new(dir).join("mpv");
+            if candidate.is_file() {
+                return candidate.to_string_lossy().into_owned();
+            }
+        }
+    }
+    for fallback in ["/usr/bin/mpv", "/usr/local/bin/mpv"] {
+        if std::path::Path::new(fallback).is_file() {
+            return fallback.into();
+        }
+    }
+    "mpv".into()
+}
+
 fn fresh_socket_path() -> String {
     let pid = std::process::id();
     let nanos = std::time::SystemTime::now()
@@ -127,7 +147,9 @@ impl CaptureBackend for MpvBackend {
         // Mirror the reference script's CLI exactly. mpv is a self-contained
         // child process, so its Wayland/GPU connection is independent of
         // Tauri's webview — no dmabuf-import collisions.
-        let mut cmd = Command::new("mpv");
+        let mpv_path = mpv_executable();
+        tracing::info!(mpv_path = %mpv_path, "spawning mpv subprocess");
+        let mut cmd = Command::new(&mpv_path);
         cmd.arg("--profile=low-latency")
             .arg("--no-cache")
             .arg("--untimed")
