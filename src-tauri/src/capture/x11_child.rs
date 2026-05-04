@@ -5,9 +5,11 @@
 
 use std::sync::Mutex;
 
-use x11rb::connection::Connection;
+use x11rb::connection::{Connection, RequestConnection};
+use x11rb::protocol::shape::{self, ConnectionExt as ShapeConnectionExt, SK, SO};
 use x11rb::protocol::xproto::{
-    ConfigureWindowAux, ConnectionExt, CreateWindowAux, EventMask, WindowClass,
+    ClipOrdering, ConfigureWindowAux, ConnectionExt, CreateWindowAux, EventMask, Rectangle,
+    WindowClass,
 };
 use x11rb::rust_connection::RustConnection;
 use x11rb::COPY_FROM_PARENT;
@@ -81,4 +83,34 @@ impl X11Child {
             tracing::warn!(?e, "x11 flush failed");
         }
     }
+}
+
+/// Set the input shape of `xid` to the union of `rects`. Mouse events
+/// outside the union pass through to whatever window is below, which is
+/// exactly what we want for the overlay's transparent middle.
+pub fn set_input_region(xid: u32, rects: &[(i32, i32, u32, u32)]) -> Result<(), String> {
+    let (conn, _) = x11rb::connect(None).map_err(|e| format!("x11 connect: {e}"))?;
+    // Make sure the shape extension is present.
+    if conn
+        .extension_information(shape::X11_EXTENSION_NAME)
+        .map_err(|e| format!("x11 ext info: {e}"))?
+        .is_none()
+    {
+        return Err("X11 SHAPE extension not available".into());
+    }
+
+    let xrects: Vec<Rectangle> = rects
+        .iter()
+        .map(|(x, y, w, h)| Rectangle {
+            x: *x as i16,
+            y: *y as i16,
+            width: *w as u16,
+            height: *h as u16,
+        })
+        .collect();
+
+    conn.shape_rectangles(SO::SET, SK::INPUT, ClipOrdering::UNSORTED, xid, 0, 0, &xrects)
+        .map_err(|e| format!("shape_rectangles: {e}"))?;
+    conn.flush().map_err(|e| format!("flush: {e}"))?;
+    Ok(())
 }

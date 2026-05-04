@@ -25,11 +25,12 @@ struct Running {
 pub struct MpvBackend {
     inner: Mutex<Option<Running>>,
     request_id: AtomicU64,
-    /// Child X11 window we own and reparent mpv into. mpv ignores
-    /// --geometry under --wid (it just fills its parent), so the only
-    /// way to constrain it to a sub-region of the Tauri window is to
-    /// give it a parent that's exactly the size of the slot.
+    /// Child X11 window we own and reparent mpv into.
     child: Mutex<Option<X11Child>>,
+    /// X11 ID of the always-on-top overlay window. Used by the
+    /// XShape input-region command so the transparent middle of the
+    /// overlay passes mouse events through to the main window.
+    overlay_xid: Mutex<Option<u32>>,
 }
 
 impl MpvBackend {
@@ -38,6 +39,7 @@ impl MpvBackend {
             inner: Mutex::new(None),
             request_id: AtomicU64::new(1),
             child: Mutex::new(None),
+            overlay_xid: Mutex::new(None),
         }
     }
 
@@ -49,6 +51,25 @@ impl MpvBackend {
         match X11Child::create(xid as u32) {
             Ok(child) => *guard = Some(child),
             Err(e) => tracing::error!(?e, "failed to create child X11 window"),
+        }
+    }
+
+    pub fn set_overlay_xid(&self, xid: u64) {
+        *self.overlay_xid.lock().unwrap() = Some(xid as u32);
+        tracing::info!(xid, "captured overlay window X11 id");
+    }
+
+    /// Apply an XShape input region to the overlay window so that only
+    /// the listed rectangles receive mouse events; everything else
+    /// passes through to the window below.
+    pub fn apply_overlay_input_region(&self, rects: &[(i32, i32, u32, u32)]) {
+        let xid = *self.overlay_xid.lock().unwrap();
+        let Some(xid) = xid else {
+            tracing::warn!("apply_overlay_input_region: overlay xid not set yet");
+            return;
+        };
+        if let Err(e) = super::x11_child::set_input_region(xid, rects) {
+            tracing::warn!(?e, "x11 input region failed");
         }
     }
 

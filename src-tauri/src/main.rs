@@ -8,17 +8,15 @@ mod commands;
 
 use std::sync::Arc;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use tauri::{Emitter, Manager};
+use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use crate::capture::CaptureBackend;
 use crate::capture::mpv::MpvBackend;
 use crate::commands::AppState;
 
 fn main() {
-    // Force the GTK webview onto XWayland. mpv embeds into our window via
-    // the X11-only `--wid` flag, so the parent has to expose an X11 window
-    // ID. WebKitGTK respects GDK_BACKEND; setting it before any Wayland or
-    // X11 init in the process makes the webview an XWayland client without
-    // affecting the rest of the system.
+    // Force the GTK webview onto XWayland. mpv embeds via the X11-only
+    // --wid flag, and our overlay window uses XShape to define its input
+    // region — both require X11 surfaces.
     std::env::set_var("GDK_BACKEND", "x11");
 
     tracing_subscriber::fmt()
@@ -45,22 +43,67 @@ fn main() {
             commands::take_screenshot,
             commands::default_settings,
             commands::set_video_region,
+            commands::set_overlay_input_region,
         ])
         .setup(move |app| {
             crate::hotplug::spawn(app.handle().clone());
 
-            // Resolve the main window's X11 ID and hand it to the backend
-            // so future stream starts can use --wid for embedding.
-            if let Some(win) = app.get_webview_window("main") {
-                if let Some(xid) = x11_window_id(&win) {
-                    tracing::info!(xid, "captured Tauri window X11 id for mpv --wid");
-                    backend_for_setup.set_parent_xid(xid);
-                } else {
-                    tracing::warn!(
-                        "could not resolve X11 window id — mpv will open as a sibling window"
-                    );
-                }
+            // Wait for the main window's X11 surface to be realized, then
+            // grab its ID + spawn a sibling overlay above it.
+            let main_win = app.get_webview_window("main").unwrap();
+            if let Some(xid) = x11_window_id(&main_win) {
+                tracing::info!(xid, "captured main window X11 id for mpv child");
+                backend_for_setup.set_parent_xid(xid);
+            } else {
+                tracing::warn!(
+                    "could not resolve main window X11 id — embedded video unavailable"
+                );
             }
+
+            // Build the overlay window: transparent, borderless, no decorations,
+            // always-on-top, no taskbar entry. Same size + position as main.
+            let pos = main_win.outer_position().unwrap_or_default();
+            let size = main_win.outer_size().unwrap_or_default();
+            let overlay = WebviewWindowBuilder::new(
+                app,
+                "overlay",
+                WebviewUrl::App("index.html".into()),
+            )
+            .title("Elgato Capture (overlay)")
+            .decorations(false)
+            .transparent(true)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .focused(false)
+            .accept_first_mouse(false)
+            .position(pos.x as f64, pos.y as f64)
+            .inner_size(size.width as f64, size.height as f64)
+            .build()
+            .expect("overlay window build failed");
+            tracing::info!("overlay window created");
+
+            // Stash the overlay's X11 ID so the input-region command can
+            // address it via XShape later.
+            if let Some(overlay_xid) = x11_window_id(&overlay) {
+                backend_for_setup.set_overlay_xid(overlay_xid);
+            }
+
+            // Position-track: when main moves or resizes, drag the overlay
+            // along with it.
+            let overlay_for_track = overlay.clone();
+            main_win.on_window_event(move |event| match event {
+                WindowEvent::Moved(p) => {
+                    let _ = overlay_for_track.set_position(tauri::PhysicalPosition::new(p.x, p.y));
+                }
+                WindowEvent::Resized(s) => {
+                    let _ = overlay_for_track
+                        .set_size(tauri::PhysicalSize::new(s.width, s.height));
+                }
+                WindowEvent::CloseRequested { .. } => {
+                    let _ = overlay_for_track.close();
+                }
+                _ => {}
+            });
 
             let backend_for_stats = backend_for_setup.clone();
             let app_handle_for_stats = app.handle().clone();

@@ -61,3 +61,14 @@ pub fn default_settings() -> Settings { Settings::default() }
 pub fn set_video_region(state: State<AppState>, w: u32, h: u32, x: i32, y: i32) {
     state.backend.set_region(w, h, x, y);
 }
+
+/// Update the overlay window's XShape input region: the union of these
+/// rectangles is where mouse events get caught; outside, events pass
+/// through to the main window. Called by the overlay React on layout.
+#[tauri::command]
+pub fn set_overlay_input_region(
+    state: State<AppState>,
+    rects: Vec<(i32, i32, u32, u32)>,
+) {
+    state.backend.apply_overlay_input_region(&rects);
+}
