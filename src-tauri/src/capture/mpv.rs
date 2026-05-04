@@ -99,69 +99,67 @@ impl CaptureBackend for MpvBackend {
         // en_US.UTF-8 with regional overrides). Force LC_NUMERIC=C up front.
         force_c_numeric_locale();
 
-        // Build the mpv instance and apply every property post-init via
-        // a single `try_set` helper so any failing key/value gets reported
-        // back to the UI by name. Each set is also logged to tracing so
-        // the terminal shows a clean trail.
-        let mpv = Mpv::new().map_err(Self::ctx("mpv_create"))?;
+        // Mirror the reference script's CLI flags via the pre-init
+        // option setter. mpv_set_option_string (what `MpvInitializer`
+        // calls under the hood) is the same code path the CLI uses to
+        // parse --flag=value arguments, so anything the script uses is
+        // accepted.
+        let pix_fmt = cfg.pix_fmt.clone();
+        let audio_device = cfg.audio_device.clone();
+        let mpv = Mpv::with_initializer(move |init| -> Result<(), libmpv2::Error> {
+            // Verbose libmpv stderr so we can see why anything fails.
+            let _ = init.set_property("terminal", "yes".to_string());
+            let _ = init.set_property("msg-level", "all=v".to_string());
 
-        // Turn libmpv's own stderr logging on so we see what it didn't like.
-        let _ = mpv.set_property("terminal", "yes".to_string());
-        let _ = mpv.set_property("msg-level", "all=v".to_string());
-
-        // Persistent runtime properties — these are real properties exposed
-        // by libmpv post-init.
-        let runtime_pairs: &[(&'static str, &'static str)] = &[
-            ("profile", "low-latency"),
-            ("cache", "no"),
-            ("untimed", "yes"),
-            ("video-latency-hacks", "yes"),
-            ("vd-lavc-threads", "1"),
-            ("demuxer-readahead-secs", "0"),
-            ("title", "Elgato Capture"),
-        ];
-        for (k, v) in runtime_pairs {
-            tracing::debug!(prop = k, val = v, "set_property");
-            if let Err(e) = mpv.set_property(k, (*v).to_string()) {
-                tracing::error!(prop = k, val = v, ?e, "set_property failed");
-                return Err(CaptureError::Mpv(format!(
-                    "set {k}={v}: {}",
-                    {
-                        let m = e.to_string();
-                        if m.is_empty() || m == "null" {
-                            "rejected by libmpv (see terminal for details)".into()
-                        } else {
-                            m
-                        }
-                    }
-                )));
+            for (k, v) in [
+                ("profile", "low-latency"),
+                ("cache", "no"),
+                ("untimed", "yes"),
+                ("video-latency-hacks", "yes"),
+                ("vd-lavc-threads", "1"),
+                ("demuxer-readahead-secs", "0"),
+                ("demuxer-lavf-format", "video4linux2"),
+                ("demuxer-lavf-probesize", "32"),
+                ("demuxer-lavf-analyzeduration", "0"),
+                ("title", "Elgato Capture"),
+            ] {
+                tracing::debug!(prop = k, val = v, "pre-init option");
+                init.set_property(k, v.to_string()).map_err(|e| {
+                    tracing::error!(prop = k, val = v, ?e, "pre-init option failed");
+                    e
+                })?;
             }
-        }
 
+            let lavf_opts = format!("pixel_format={}", pix_fmt);
+            tracing::debug!(prop = "demuxer-lavf-o", val = %lavf_opts, "pre-init option");
+            init.set_property("demuxer-lavf-o", lavf_opts.clone())
+                .map_err(|e| {
+                    tracing::error!(prop = "demuxer-lavf-o", val = %lavf_opts, ?e, "pre-init option failed");
+                    e
+                })?;
+
+            let audio_file = format!("av://alsa:{}", audio_device);
+            tracing::debug!(prop = "audio-file", val = %audio_file, "pre-init option");
+            init.set_property("audio-file", audio_file.clone())
+                .map_err(|e| {
+                    tracing::error!(prop = "audio-file", val = %audio_file, ?e, "pre-init option failed");
+                    e
+                })?;
+            Ok(())
+        })
+        .map_err(Self::ctx("mpv init"))?;
+
+        // Volume + mute are real runtime properties.
         mpv.set_property("volume", cfg.volume as i64)
             .map_err(Self::ctx("set volume"))?;
         mpv.set_property("mute", if cfg.muted { "yes" } else { "no" }.to_string())
             .map_err(Self::ctx("set mute"))?;
 
-        // Per-file options live on the `loadfile` command, not as runtime
-        // properties. demuxer-lavf-*, demuxer-lavf-o, and audio-file are
-        // all load-time only — passing them via set_property fails with
-        // PROPERTY_NOT_FOUND.
-        let per_file_opts = format!(
-            "demuxer-lavf-format=video4linux2,\
-             demuxer-lavf-probesize=32,\
-             demuxer-lavf-analyzeduration=0,\
-             demuxer-lavf-o=pixel_format={pix},\
-             audio-file=av://alsa:{aud}",
-            pix = cfg.pix_fmt,
-            aud = cfg.audio_device,
-        );
-        tracing::info!(opts = %per_file_opts, video = %cfg.video_device, "loadfile");
-        mpv.command(
-            "loadfile",
-            &[&cfg.video_device, "replace", "-1", &per_file_opts],
-        )
-        .map_err(Self::ctx("loadfile"))?;
+        // Begin playback of the V4L2 device — three-arg form for older
+        // mpv compatibility (no `index` parameter).
+        tracing::info!(video = %cfg.video_device, "loadfile");
+        mpv.command("loadfile", &[&cfg.video_device, "replace"])
+            .map_err(Self::ctx("loadfile"))?;
 
         *guard = Some(mpv);
         tracing::info!("mpv stream started");
