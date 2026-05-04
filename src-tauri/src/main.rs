@@ -44,6 +44,7 @@ fn main() {
             commands::get_stats,
             commands::take_screenshot,
             commands::default_settings,
+            commands::set_video_region,
         ])
         .setup(move |app| {
             crate::hotplug::spawn(app.handle().clone());

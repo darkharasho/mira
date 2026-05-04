@@ -26,6 +26,10 @@ pub struct MpvBackend {
     request_id: AtomicU64,
     /// Tauri main window's X11 ID. mpv embeds inside this via `--wid`.
     parent_xid: Mutex<Option<u64>>,
+    /// Pixel rectangle (w, h, x, y) where mpv's video region should
+    /// render inside the Tauri window. Used both as the initial
+    /// `--geometry` and for runtime updates over IPC.
+    region: Mutex<Option<(u32, u32, i32, i32)>>,
 }
 
 impl MpvBackend {
@@ -34,11 +38,30 @@ impl MpvBackend {
             inner: Mutex::new(None),
             request_id: AtomicU64::new(1),
             parent_xid: Mutex::new(None),
+            region: Mutex::new(None),
         }
     }
 
     pub fn set_parent_xid(&self, xid: u64) {
         *self.parent_xid.lock().unwrap() = Some(xid);
+    }
+
+    /// Update the video region inside the parent window. If mpv is
+    /// already running, push the new geometry over IPC; otherwise the
+    /// next start() picks it up via `--geometry`.
+    pub fn set_region(&self, w: u32, h: u32, x: i32, y: i32) {
+        *self.region.lock().unwrap() = Some((w, h, x, y));
+        let socket_path = {
+            let guard = self.inner.lock().unwrap();
+            guard.as_ref().map(|r| r.socket_path.clone())
+        };
+        if let Some(socket_path) = socket_path {
+            let geom = format!("{w}x{h}+{x}+{y}");
+            let _ = self.ipc(
+                &socket_path,
+                json!({"command": ["set_property", "geometry", geom]}),
+            );
+        }
     }
 
     fn next_id(&self) -> u64 {
@@ -164,9 +187,12 @@ impl CaptureBackend for MpvBackend {
                 // is set, which crashes with dmabuf import errors against
                 // an X11-embedded window).
                 .arg("--gpu-context=x11egl");
-            // Belt-and-braces: hide WAYLAND_DISPLAY from the child so any
-            // subsystem that re-checks the env also picks X11.
             cmd.env_remove("WAYLAND_DISPLAY");
+
+            if let Some((w, h, x, y)) = *self.region.lock().unwrap() {
+                cmd.arg(format!("--geometry={w}x{h}+{x}+{y}"));
+                tracing::info!(w, h, x, y, "mpv initial geometry");
+            }
         }
         cmd.arg("--profile=low-latency")
             .arg("--no-cache")

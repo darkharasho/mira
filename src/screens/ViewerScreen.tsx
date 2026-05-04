@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDevices } from "../hooks/useDevices";
 import { useStream } from "../hooks/useStream";
 import { useStats } from "../hooks/useStats";
 import { useHotkeys } from "../hooks/useHotkeys";
-import { useAutoHide } from "../hooks/useAutoHide";
 import { SettingsPanel } from "../components/SettingsPanel";
 import { Toast } from "../components/Toast";
 import {
   setMute as ipcSetMute,
   setVolume as ipcSetVolume,
+  setVideoRegion,
   takeScreenshot,
 } from "../lib/ipc";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -26,12 +26,31 @@ export function ViewerScreen({
   const { devices } = useDevices();
   const { state, error, start, stop } = useStream();
   const stats = useStats();
-  const visible = useAutoHide(2500);
   const [panelOpen, setPanelOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  // Force chrome visible while the settings panel is open so the gear /
-  // bar don't fade behind the user's interaction.
-  const chromeVisible = visible || panelOpen;
+  const videoSlotRef = useRef<HTMLDivElement | null>(null);
+
+  // Push the video slot's bounding rect to mpv whenever it changes.
+  useEffect(() => {
+    const el = videoSlotRef.current;
+    if (!el) return;
+    const push = () => {
+      const r = el.getBoundingClientRect();
+      const w = Math.max(1, Math.round(r.width));
+      const h = Math.max(1, Math.round(r.height));
+      const x = Math.round(r.left);
+      const y = Math.round(r.top);
+      setVideoRegion(w, h, x, y).catch(() => {});
+    };
+    push();
+    const ro = new ResizeObserver(push);
+    ro.observe(el);
+    window.addEventListener("resize", push);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", push);
+    };
+  }, []);
 
   const cfg = useMemo(
     () => ({
@@ -136,64 +155,21 @@ export function ViewerScreen({
   );
 
   return (
-    <div className="h-full relative">
-      {/* Background fill — always visible, contains optional stats */}
-      <section className="absolute inset-0 grid place-items-center px-10">
-        {settings.show_stats && stats && status === "running" ? (
-          <div className="font-mono text-xs text-zinc-400 leading-relaxed text-center space-y-1">
-            <div className="text-3xl text-zinc-100 font-light tracking-tight">
-              {stats.width}×{stats.height}
-            </div>
-            <div className="text-zinc-500">
-              {stats.fps.toFixed(2)} fps · {stats.pix_fmt || "—"} · {stats.latency_ms}ms
-            </div>
-          </div>
-        ) : (
-          <div className="text-xs text-zinc-600">
-            {status === "running"
-              ? "Stats hidden · press S"
-              : status === "starting"
-              ? "Connecting to capture device…"
-              : status === "error"
-              ? "Stream stopped"
-              : "Idle"}
-          </div>
-        )}
-      </section>
-
-      {error && (
-        <div className="absolute top-5 left-5 right-5 z-10 rounded-lg border border-warn/30 bg-warn/10 backdrop-blur px-3 py-2 text-xs text-warn flex items-start gap-2">
-          <span>⚠</span>
-          <div className="flex-1">
-            <div className="font-mono leading-snug">{error}</div>
-            <button className="underline mt-1 hover:text-warn/80" onClick={onResetToStartup}>
-              Open settings
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Header overlay — auto-hide */}
-      <header
-        className={`absolute top-0 left-0 right-0 px-5 pt-4 pb-3 flex items-center justify-between
-                    transition-opacity duration-200
-                    ${chromeVisible ? "opacity-100" : "opacity-0 pointer-events-none"}`}
-      >
-        <div className="flex items-center gap-2.5 min-w-0 px-3 py-1.5 rounded-full
-                        bg-zinc-900/70 backdrop-blur-md border border-white/10">
+    <div className="h-full flex flex-col">
+      {/* Top chrome strip — opaque, sits above the embedded mpv region */}
+      <header className="px-4 py-2 flex items-center justify-between border-b border-white/5 bg-zinc-950/80">
+        <div className="flex items-center gap-2.5 min-w-0">
           <div className={`w-2 h-2 rounded-full shrink-0 ${dotClass}`} />
           <span className="text-xs font-medium tracking-tight text-zinc-100">{statusText}</span>
           <span className="text-xs text-zinc-500">·</span>
-          <span className="text-xs text-zinc-300 truncate max-w-[280px]" title={deviceLabel}>
+          <span className="text-xs text-zinc-300 truncate max-w-[420px]" title={deviceLabel}>
             {deviceLabel}
           </span>
         </div>
         <button
           onClick={() => setPanelOpen(true)}
           title="Settings"
-          className="grid place-items-center w-9 h-9 rounded-full bg-zinc-900/70 backdrop-blur-md
-                     border border-white/10 text-zinc-300 hover:text-white hover:bg-zinc-800
-                     transition-colors shrink-0"
+          className="grid place-items-center w-8 h-8 rounded-md text-zinc-400 hover:text-white hover:bg-white/10 transition-colors shrink-0"
         >
           <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none">
             <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.4" />
@@ -205,14 +181,45 @@ export function ViewerScreen({
         </button>
       </header>
 
-      {/* Floating control pill — auto-hide */}
-      <div
-        className={`absolute left-1/2 -translate-x-1/2 bottom-6 transition-opacity duration-200
-                    ${chromeVisible ? "opacity-100" : "opacity-0 pointer-events-none"}`}
-      >
+      {error && (
+        <div className="mx-4 mt-3 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-warn flex items-start gap-2">
+          <span>⚠</span>
+          <div className="flex-1">
+            <div className="font-mono leading-snug">{error}</div>
+            <button className="underline mt-1 hover:text-warn/80" onClick={onResetToStartup}>
+              Open settings
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Video slot — bare div whose bounding rect is reported to mpv,
+          which renders its embedded X11 window in this exact rectangle. */}
+      <div ref={videoSlotRef} className="flex-1 min-h-0 bg-black relative">
+        {status !== "running" && (
+          <div className="absolute inset-0 grid place-items-center text-xs text-zinc-600 pointer-events-none">
+            {status === "starting"
+              ? "Connecting to capture device…"
+              : status === "error"
+              ? "Stream stopped"
+              : "Idle"}
+          </div>
+        )}
+      </div>
+
+      {/* Bottom chrome strip — opaque, contains the floating pill */}
+      <div className="border-t border-white/5 bg-zinc-950/80 py-3 px-4 flex items-center justify-between gap-3">
+        {settings.show_stats && stats && status === "running" ? (
+          <div className="font-mono text-[10px] text-zinc-500 leading-snug shrink-0">
+            <div>{stats.width}×{stats.height} · {stats.fps.toFixed(2)} fps</div>
+            <div>{stats.pix_fmt || "—"} · {stats.latency_ms}ms</div>
+          </div>
+        ) : (
+          <div className="text-[10px] text-zinc-600 shrink-0 w-28">&nbsp;</div>
+        )}
         <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-full
-                        bg-zinc-900/85 backdrop-blur-xl border border-white/10
-                        shadow-[0_8px_24px_-12px_rgba(0,0,0,0.8)]">
+                        bg-zinc-900/85 border border-white/10">
+
           <PillBtn onClick={onScreenshot} title="Screenshot (P)">
             <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none">
               <rect x="1.5" y="3.5" width="13" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.4" />

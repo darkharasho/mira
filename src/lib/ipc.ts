@@ -11,5 +11,8 @@ export const getStats = () => invoke<StreamStats>("get_stats");
 export const takeScreenshot = () => invoke<string>("take_screenshot");
 export const defaultSettings = () => invoke<Settings>("default_settings");
 
+export const setVideoRegion = (w: number, h: number, x: number, y: number) =>
+  invoke<void>("set_video_region", { w, h, x, y });
+
 export const onDevicesChanged = (cb: () => void) =>
   listen("devices-changed", () => cb());

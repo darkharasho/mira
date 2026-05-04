@@ -53,3 +53,11 @@ pub fn take_screenshot(state: State<AppState>) -> Result<String, String> {
 
 #[tauri::command]
 pub fn default_settings() -> Settings { Settings::default() }
+
+/// Update the rectangle (in window-local CSS pixels) where mpv should
+/// render its embedded video. The webview measures its layout and calls
+/// this whenever the video region changes (initial mount + resize).
+#[tauri::command]
+pub fn set_video_region(state: State<AppState>, w: u32, h: u32, x: i32, y: i32) {
+    state.backend.set_region(w, h, x, y);
+}
