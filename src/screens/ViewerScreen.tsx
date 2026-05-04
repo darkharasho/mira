@@ -221,40 +221,33 @@ export function ViewerScreen({
             </svg>
           </PillBtn>
 
-          {/* Volume group: mute icon + hover-reveal slider */}
-          <div className="group/vol flex items-center">
-            <PillBtn onClick={onMute} title={settings.muted ? "Unmute (M)" : "Mute (M)"} active={settings.muted}>
-              {muteIcon}
-            </PillBtn>
-            <div className="overflow-hidden flex items-center
-                            w-0 group-hover/vol:w-44
-                            opacity-0 group-hover/vol:opacity-100
-                            transition-all duration-200 ease-out">
-              <input
-                type="range"
-                min={0}
-                max={150}
-                value={settings.volume}
-                onChange={(e) => onChangeSettings({ volume: Number(e.target.value) })}
-                className="w-32 accent-accent ml-2"
-              />
-              <span className="text-[10px] font-mono text-zinc-400 w-8 text-right tabular-nums">
-                {settings.volume}
-              </span>
-            </div>
-          </div>
+          <PillBtn onClick={onMute} title={settings.muted ? "Unmute (M)" : "Mute (M)"} active={settings.muted}>
+            {muteIcon}
+          </PillBtn>
 
           <PillBtn onClick={onToggleStats} title="Toggle stats (S)" active={settings.show_stats}>
             <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none">
               <path d="M2 13V8m4 5V5m4 8V9m4 4V3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
             </svg>
           </PillBtn>
+
           <span className="w-px h-4 bg-white/10 mx-0.5" />
-          <PillBtn onClick={onResetToStartup} title="Change source">
-            <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none">
-              <path d="M3 7l3-3 3 3M6 4v6a3 3 0 0 0 3 3h4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </PillBtn>
+
+          {/* Always-visible volume slider */}
+          <div className="flex items-center gap-2 px-2">
+            <input
+              type="range"
+              min={0}
+              max={150}
+              value={settings.volume}
+              onChange={(e) => onChangeSettings({ volume: Number(e.target.value) })}
+              className="w-36 accent-accent"
+              aria-label={`Volume ${settings.volume}`}
+            />
+            <span className="text-[10px] font-mono text-zinc-400 w-7 text-right tabular-nums select-none">
+              {settings.volume}
+            </span>
+          </div>
         </div>
       </div>
 
