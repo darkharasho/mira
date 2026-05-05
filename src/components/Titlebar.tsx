@@ -11,7 +11,7 @@ export function Titlebar() {
       <div data-tauri-drag-region className="flex items-center gap-2 pointer-events-none">
         <div className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
         <span className="text-[11px] font-medium tracking-tight text-zinc-300">
-          Elgato Capture
+          Mira
         </span>
       </div>
       <div className="flex items-center gap-1">

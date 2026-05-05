@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Mira
+Comment=Low-latency capture-card viewer for Linux
+Exec=mira %U
+Icon=mira
+Categories=AudioVideo;Video;
+Terminal=false
+StartupWMClass=Mira

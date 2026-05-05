@@ -157,12 +157,12 @@ fn fresh_socket_path() -> String {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    format!("/tmp/elgato-capture-{pid}-{nanos}.sock")
+    format!("/tmp/mira-{pid}-{nanos}.sock")
 }
 
 fn mpv_log_path() -> String {
     let pid = std::process::id();
-    format!("/tmp/elgato-capture-mpv-{pid}.log")
+    format!("/tmp/mira-mpv-{pid}.log")
 }
 
 /// Map an alsa hw identifier to the matching low-latency dsnoop PCM
@@ -267,7 +267,7 @@ impl CaptureBackend for MpvBackend {
             .arg(format!("--audio-file=av://alsa:{}", alsa_lowlatency_pcm(&cfg.audio_device)))
             .arg(format!("--volume={}", cfg.volume))
             .arg(format!("--mute={}", if cfg.muted { "yes" } else { "no" }))
-            .arg("--title=Elgato Capture")
+            .arg("--title=Mira")
             .arg(format!("--input-ipc-server={socket_path}"))
             .arg(&cfg.video_device)
             .stdin(Stdio::null())

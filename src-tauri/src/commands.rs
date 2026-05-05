@@ -47,7 +47,7 @@ pub fn take_screenshot(state: State<AppState>) -> Result<String, String> {
     tracing::info!("take_screenshot invoked");
     let dir = dirs::picture_dir()
         .unwrap_or_else(|| std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()))
-        .join("elgato");
+        .join("mira");
     tracing::info!(?dir, "screenshot target dir");
     std::fs::create_dir_all(&dir).map_err(|e| {
         tracing::error!(?e, "create_dir_all failed");

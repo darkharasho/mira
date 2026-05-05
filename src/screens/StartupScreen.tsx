@@ -41,7 +41,7 @@ export function StartupScreen({
       <header className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-2.5">
           <div className="w-2 h-2 rounded-full bg-accent shadow-[0_0_8px_#5cf08a]" />
-          <h1 className="text-sm font-semibold tracking-tight">Elgato Capture</h1>
+          <h1 className="text-sm font-semibold tracking-tight">Mira</h1>
         </div>
         <button
           onClick={refresh}

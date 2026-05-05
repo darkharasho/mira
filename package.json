@@ -1,6 +1,6 @@
 {
-  "name": "elgato-capture",
-  "version": "0.1.1",
+  "name": "mira",
+  "version": "0.1.2",
   "description": "",
   "main": "index.js",
   "directories": {
@@ -18,16 +18,16 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/darkharasho/linux-game-streamer.git"
+    "url": "git+https://github.com/darkharasho/mira.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
   "bugs": {
-    "url": "https://github.com/darkharasho/linux-game-streamer/issues"
+    "url": "https://github.com/darkharasho/mira/issues"
   },
-  "homepage": "https://github.com/darkharasho/linux-game-streamer#readme",
+  "homepage": "https://github.com/darkharasho/mira#readme",
   "private": "true",
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.4",

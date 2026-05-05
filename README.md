@@ -1,6 +1,6 @@
-# Elgato Capture
+# Mira
 
-Low-latency Linux/Wayland viewer for Elgato capture cards. Built with Tauri 2 + React + Tailwind. Replaces the bare `~/.local/bin/elgato-capture.sh` workflow with a sleek control surface around libmpv.
+Low-latency Linux viewer for Elgato (and other v4l2/USB) capture cards. Built with Tauri 2 + React + Tailwind, drives mpv via IPC, and routes audio through a custom dsnoop ALSA wrapper for sub-30ms capture latency. Replaces the bare `~/.local/bin/elgato-capture.sh` workflow with a real control surface.
 
 Validated on Bazzite (Fedora) + KDE Plasma + Wayland with an Elgato Game Capture Neo at `/dev/video2`.
 
@@ -56,7 +56,7 @@ Vite-only commands (`npm run dev`, `npm run build`) run on the host as usual —
 | `Esc` | Close panel / exit fullscreen   |
 | `Q`   | Quit                            |
 
-Screenshots land in `~/Pictures/elgato/capture-YYYYMMDD-HHMMSS.png`.
+Screenshots land in `~/Pictures/mira/capture-YYYYMMDD-HHMMSS.png`.
 
 ## Manual smoke checklist
 
