@@ -11,7 +11,16 @@ import {
   takeScreenshot,
 } from "../lib/ipc";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import warningIcon from "../assets/icons/warning.svg";
+import {
+  Camera,
+  ChartBar,
+  CornersIn,
+  CornersOut,
+  GearSix,
+  SpeakerHigh,
+  SpeakerSlash,
+  Warning,
+} from "@phosphor-icons/react";
 import type { Settings } from "../lib/types";
 
 /// Single-window viewer. The mpv X11 child window is reparented into our
@@ -150,22 +159,16 @@ export function ViewerScreen({
       : "idle";
 
   const muteIcon = settings.muted ? (
-    <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none">
-      <path d="M8 3L4.5 6H2v4h2.5L8 13V3z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-      <path d="M11 6l3 4M14 6l-3 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-    </svg>
+    <SpeakerSlash size={28} weight="regular" color="url(#miraIconStroke)" />
   ) : (
-    <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none">
-      <path d="M8 3L4.5 6H2v4h2.5L8 13V3z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-      <path d="M11 6c.8.8.8 3.2 0 4M13 4c1.5 1.5 1.5 6.5 0 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-    </svg>
+    <SpeakerHigh size={28} weight="regular" color="url(#miraIconStroke)" />
   );
 
   return (
     <div className="h-full flex flex-col relative">
       {error && (
         <div className="mx-4 mt-3 mb-2 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-warn flex items-start gap-2 z-10">
-          <img src={warningIcon} alt="" className="w-4 h-4 mt-0.5 shrink-0" draggable={false} />
+          <Warning size={16} weight="regular" color="url(#miraIconWarn)" className="mt-0.5 shrink-0" />
           <div className="flex-1">
             <div className="font-mono leading-snug">{error}</div>
             <button className="underline mt-1 hover:text-warn/80" onClick={onResetToStartup}>
@@ -193,27 +196,17 @@ export function ViewerScreen({
         )}
       </div>
 
-      {/* Bottom control pill. mpv's X11 child paints over the video slot
-          above, so the button tooltips have to fit inside this strip —
-          PillBtn keeps them small + close to the button so an h-20
-          strip is enough. */}
+      {/* Bottom control strip. No pill background — icons sit on the dark
+          frame so the gradient glyphs have room to breathe. */}
       <div className="h-20 relative flex items-center justify-center shrink-0 z-10">
-        <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-full
-                        bg-zinc-900/85 backdrop-blur-xl border border-white/10
-                        shadow-[0_8px_24px_-12px_rgba(0,0,0,0.8)]">
+        <div className="flex items-center gap-3">
           <PillBtn onClick={onScreenshot} title="Screenshot (P)">
-            <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none">
-              <rect x="1.5" y="3.5" width="13" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
-              <circle cx="8" cy="8.5" r="2.5" stroke="currentColor" strokeWidth="1.4" />
-              <path d="M5.5 3.5L6.5 2h3l1 1.5" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-            </svg>
+            <Camera size={28} weight="regular" color="url(#miraIconStroke)" />
           </PillBtn>
           <PillBtn onClick={onToggleStats} title="Toggle stats (S)" active={settings.show_stats}>
-            <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none">
-              <path d="M2 13V8m4 5V5m4 8V9m4 4V3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-            </svg>
+            <ChartBar size={28} weight="regular" color="url(#miraIconStroke)" />
           </PillBtn>
-          <span className="w-px h-4 bg-white/10 mx-0.5" />
+          <span className="w-px h-6 bg-white/10" />
           <div className="group/vol flex items-center">
             <div className="overflow-hidden flex items-center
                             w-0 group-hover/vol:w-44
@@ -243,32 +236,18 @@ export function ViewerScreen({
               {muteIcon}
             </PillBtn>
           </div>
-          <span className="w-px h-4 bg-white/10 mx-0.5" />
+          <span className="w-px h-6 bg-white/10" />
           <PillBtn
             onClick={onToggleFullscreen}
             title={fullscreen ? "Exit fullscreen (F / Esc)" : "Fullscreen (F)"}
             active={fullscreen}
           >
-            {fullscreen ? (
-              <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none">
-                <path d="M6 1v3a2 2 0 0 1-2 2H1M10 1v3a2 2 0 0 0 2 2h3M6 15v-3a2 2 0 0 0-2-2H1M10 15v-3a2 2 0 0 1 2-2h3"
-                      stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            ) : (
-              <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none">
-                <path d="M1 5V2a1 1 0 0 1 1-1h3M11 1h3a1 1 0 0 1 1 1v3M15 11v3a1 1 0 0 1-1 1h-3M5 15H2a1 1 0 0 1-1-1v-3"
-                      stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            )}
+            {fullscreen
+              ? <CornersIn size={28} weight="regular" color="url(#miraIconStroke)" />
+              : <CornersOut size={28} weight="regular" color="url(#miraIconStroke)" />}
           </PillBtn>
           <PillBtn onClick={() => setPanelOpen(true)} title="Settings">
-            <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none">
-              <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.4" />
-              <path
-                d="M8 1v2m0 10v2m4.95-12.95l-1.41 1.41M3.46 12.54l-1.41 1.41M15 8h-2M3 8H1m12.95 4.95l-1.41-1.41M3.46 3.46L2.05 2.05"
-                stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"
-              />
-            </svg>
+            <GearSix size={28} weight="regular" color="url(#miraIconStroke)" />
           </PillBtn>
         </div>
         {settings.show_stats && stats && status === "running" && (
@@ -315,11 +294,11 @@ function PillBtn({
       <button
         onClick={onClick}
         aria-label={title}
-        className={`grid place-items-center w-9 h-9 rounded-full transition-all duration-150
+        className={`grid place-items-center w-11 h-11 rounded-full transition-all duration-150
                     active:scale-90
                     ${active
-                      ? "bg-accent/25 text-accent shadow-[0_0_14px_-2px_rgba(92,240,138,0.6)] hover:bg-accent/40 hover:scale-105"
-                      : "text-zinc-400 hover:bg-white/20 hover:text-white hover:scale-110"}`}
+                      ? "bg-accent/15 shadow-[0_0_14px_-4px_rgba(92,240,138,0.5)] hover:bg-accent/25 hover:scale-105"
+                      : "hover:bg-white/10 hover:scale-110"}`}
       >
         {children}
       </button>

@@ -56,6 +56,21 @@ export default function App() {
 
   return (
     <div className="h-full flex flex-col">
+      {/* Document-scoped <defs> referenced by url(#…) on Phosphor icons.
+          One subtle off-white → faint-mint gradient that gives the chrome
+          a quiet brand tint without screaming "gradient icons". */}
+      <svg width="0" height="0" className="absolute pointer-events-none" aria-hidden>
+        <defs>
+          <linearGradient id="miraIconStroke" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#f4f4f5" />
+            <stop offset="1" stopColor="#a8f0bf" />
+          </linearGradient>
+          <linearGradient id="miraIconWarn" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#fde7c2" />
+            <stop offset="1" stopColor="#f0b35c" />
+          </linearGradient>
+        </defs>
+      </svg>
       {!fullscreen && <Titlebar />}
       <main className="flex-1 min-h-0 relative overflow-hidden">
         {!settings ? (

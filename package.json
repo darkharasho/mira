@@ -40,10 +40,11 @@
     "vite": "^8.0.10"
   },
   "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
     "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/plugin-process": "^2.0.0",
     "@tauri-apps/plugin-store": "^2.4.3",
     "@tauri-apps/plugin-updater": "^2.0.0",
-    "@tauri-apps/plugin-process": "^2.0.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5"
   }

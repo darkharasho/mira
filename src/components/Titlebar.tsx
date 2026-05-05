@@ -1,4 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { MiraMark } from "./MiraMark";
 
 export function Titlebar() {
   const win = getCurrentWindow();
@@ -9,7 +10,7 @@ export function Titlebar() {
                  border-b border-white/5 bg-black/30 shrink-0"
     >
       <div data-tauri-drag-region className="flex items-center gap-2 pointer-events-none">
-        <img src="/mira-mark.svg" alt="" className="w-4 h-4 shrink-0 opacity-90" />
+        <MiraMark className="w-4 h-4 shrink-0" />
         <span className="text-[11px] font-medium tracking-tight text-zinc-300">
           Mira
         </span>
