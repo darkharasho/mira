@@ -4,7 +4,7 @@ import { listDevices, onDevicesChanged } from "../lib/ipc";
 import type { DeviceList } from "../lib/types";
 
 export function useDevices() {
-  const [devices, setDevices] = useState<DeviceList>({ video: [], audio_outputs: [] });
+  const [devices, setDevices] = useState<DeviceList>({ video: [] });
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {

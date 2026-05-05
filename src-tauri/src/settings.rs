@@ -10,10 +10,6 @@ pub struct Settings {
     pub skip_startup: bool,
     #[serde(default = "default_display_resolution")]
     pub display_resolution: String,
-    /// PulseAudio sink name to play captured audio through. None = use
-    /// the system default sink.
-    #[serde(default)]
-    pub audio_output: Option<String>,
 }
 
 fn default_display_resolution() -> String {
@@ -30,7 +26,6 @@ impl Default for Settings {
             show_stats: true,
             skip_startup: true,
             display_resolution: default_display_resolution(),
-            audio_output: None,
         }
     }
 }
@@ -49,7 +44,6 @@ mod tests {
             show_stats: false,
             skip_startup: true,
             display_resolution: "1440p".into(),
-            audio_output: Some("alsa_output.usb-Audioengine".into()),
         };
         let json = serde_json::to_string(&s).unwrap();
         let back: Settings = serde_json::from_str(&json).unwrap();

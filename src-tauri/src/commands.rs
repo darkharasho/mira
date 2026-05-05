@@ -2,7 +2,7 @@ use std::sync::Arc;
 use tauri::State;
 use crate::capture::{CaptureBackend, StreamConfig, StreamStats};
 use crate::capture::mpv::MpvBackend;
-use crate::devices::{DeviceList, pulse as pulse_dev, v4l2 as v4l2_dev};
+use crate::devices::{DeviceList, v4l2 as v4l2_dev};
 use crate::settings::Settings;
 
 pub struct AppState {
@@ -13,7 +13,6 @@ pub struct AppState {
 pub fn list_devices() -> DeviceList {
     DeviceList {
         video: v4l2_dev::enumerate(),
-        audio_outputs: pulse_dev::enumerate_sinks(),
     }
 }
 

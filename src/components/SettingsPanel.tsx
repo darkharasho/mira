@@ -97,17 +97,6 @@ export function SettingsPanel({
             options={devices.video.map((d) => ({ value: d.path, label: `${d.name} (${d.path})` }))}
           />
           <DevicePicker
-            label="Audio output"
-            value={settings.audio_output ?? "__default__"}
-            onChange={(v) =>
-              onChange({ audio_output: v === "__default__" ? null : v })
-            }
-            options={[
-              { value: "__default__", label: "System default" },
-              ...devices.audio_outputs.map((d) => ({ value: d.id, label: d.label })),
-            ]}
-          />
-          <DevicePicker
             label="Pixel format"
             value={settings.pix_fmt}
             onChange={(v) => onChange({ pix_fmt: v })}

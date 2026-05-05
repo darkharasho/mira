@@ -13,48 +13,6 @@
 //! `suspend_pulse_for_alsa()` flips the pulse source back to suspended
 //! so we can safely open hw:N,0 ourselves.
 
-use super::AudioDevice;
-
-/// Enumerate pulse output sinks (speakers, headphones). The `id` is
-/// the pulse sink name suitable for `PULSE_SINK=` env on a client.
-pub fn enumerate_sinks() -> Vec<AudioDevice> {
-    let Ok(output) = std::process::Command::new("pactl")
-        .args(["list", "sinks"])
-        .output()
-    else {
-        return Vec::new();
-    };
-    if !output.status.success() {
-        return Vec::new();
-    }
-    let text = String::from_utf8_lossy(&output.stdout);
-    let mut out = Vec::new();
-    for block in split_blocks_with(&text, "\nSink #") {
-        let Some(name) = field(block, "Name: ") else { continue };
-        let description = field(block, "Description: ").unwrap_or(name);
-        out.push(AudioDevice {
-            id: name.to_string(),
-            label: description.to_string(),
-        });
-    }
-    out
-}
-
-fn split_blocks_with<'a>(text: &'a str, marker: &str) -> Vec<&'a str> {
-    let mut blocks = Vec::new();
-    let mut start = 0;
-    for (i, _) in text.match_indices(marker) {
-        if i > start {
-            blocks.push(&text[start..i]);
-        }
-        start = i + 1;
-    }
-    if start < text.len() {
-        blocks.push(&text[start..]);
-    }
-    blocks
-}
-
 /// Find the pulse source name corresponding to an alsa hw identifier.
 /// Used so we can `pactl suspend-source <name>` before opening the
 /// device directly via alsa.

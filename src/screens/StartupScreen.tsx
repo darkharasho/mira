@@ -12,7 +12,6 @@ export function StartupScreen({
 }) {
   const { devices, loading, refresh } = useDevices();
   const [video, setVideo] = useState<string | null>(initial.video_device);
-  const [output, setOutput] = useState<string | null>(initial.audio_output);
   const [pixFmt, setPixFmt] = useState<string | null>(initial.pix_fmt);
   const [skip, setSkip] = useState(initial.skip_startup);
 
@@ -72,16 +71,6 @@ export function StartupScreen({
           disabled={loading}
         />
         <DevicePicker
-          label="Audio output"
-          value={output ?? "__default__"}
-          onChange={(v) => setOutput(v === "__default__" ? null : v)}
-          options={[
-            { value: "__default__", label: "System default" },
-            ...devices.audio_outputs.map((d) => ({ value: d.id, label: d.label })),
-          ]}
-          disabled={loading}
-        />
-        <DevicePicker
           label="Pixel format"
           value={pixFmt}
           onChange={setPixFmt}
@@ -109,7 +98,6 @@ export function StartupScreen({
           onStart({
             ...initial,
             video_device: video,
-            audio_output: output,
             pix_fmt: pixFmt,
             skip_startup: skip,
           })

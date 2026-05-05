@@ -12,9 +12,6 @@ pub struct StreamConfig {
     pub pix_fmt: String,
     pub volume: u8,
     pub muted: bool,
-    /// Optional pulse sink name to route capture audio output through.
-    /// None = use system default sink.
-    pub audio_output: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

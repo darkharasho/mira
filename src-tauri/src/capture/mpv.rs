@@ -299,14 +299,6 @@ impl CaptureBackend for MpvBackend {
             tracing::info!(source = %name, "suspended pulse source for alsa-direct capture");
         }
 
-        // Route the capture audio output through the user's chosen
-        // pulse sink. mpv's pipewire AO honors PULSE_SINK indirectly
-        // through the pulse compat layer.
-        if let Some(sink) = &cfg.audio_output {
-            cmd.env("PULSE_SINK", sink);
-            tracing::info!(sink = %sink, "routing audio output to pulse sink");
-        }
-
         cmd.arg("--profile=low-latency")
             // Suppress mpv's own UI — no on-screen controller, no OSD
             // text, no input bindings/cursor. The control surface lives
@@ -333,12 +325,15 @@ impl CaptureBackend for MpvBackend {
             // where there's no shared timeline anyway.
             .arg("--initial-audio-sync=no")
             .arg("--video-sync=desync")
+            // Talk to pipewire directly — the pulse compat layer adds
+            // 100-300ms of sink buffer that we can't tune from here.
+            .arg("--ao=pipewire")
             // low-latency profile sets audio-buffer=0, which combined
             // with dsnoop's 21ms ALSA buffer guarantees xruns on every
             // scheduling jitter — the AO starves and audio drops out
-            // entirely. 100ms of AO buffer absorbs jitter without
-            // adding noticeable lip-sync delay for game capture.
-            .arg("--audio-buffer=0.1")
+            // entirely. 50ms is enough to absorb jitter on the pipewire
+            // path while keeping lip sync tight for game capture.
+            .arg("--audio-buffer=0.05")
             .arg(format!("--demuxer-lavf-o=pixel_format={}", cfg.pix_fmt))
             .arg("--demuxer-lavf-probesize=32")
             .arg("--demuxer-lavf-analyzeduration=0")

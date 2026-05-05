@@ -80,7 +80,7 @@ export function ViewerScreen({
 
   useEffect(() => {
     if (!toast) return;
-    const t = window.setTimeout(() => setToast(null), 1800);
+    const t = window.setTimeout(() => setToast(null), 2800);
     return () => window.clearTimeout(t);
   }, [toast]);
 
@@ -99,21 +99,20 @@ export function ViewerScreen({
       pix_fmt: settings.pix_fmt!,
       volume: settings.volume,
       muted: settings.muted,
-      audio_output: settings.audio_output,
     }),
     [settings, audioCapture],
   );
 
   // Restart the stream whenever any setting that mpv consumes at start
-  // time changes — device, pix fmt, output sink. Volume/mute are
-  // applied live via IPC and don't need a restart.
+  // time changes — device, pix fmt. Volume/mute are applied live via
+  // IPC and don't need a restart.
   useEffect(() => {
     start(cfg);
     return () => {
       stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.video_device, audioCapture, settings.pix_fmt, settings.audio_output]);
+  }, [settings.video_device, audioCapture, settings.pix_fmt]);
 
   useEffect(() => {
     ipcSetVolume(settings.volume).catch(() => {});
@@ -122,7 +121,9 @@ export function ViewerScreen({
   const onScreenshot = useCallback(async () => {
     try {
       const path = await takeScreenshot();
-      setToast(`Saved ${path.split("/").pop()}`);
+      const home = path.startsWith("/home/") ? `/${path.split("/").slice(1, 3).join("/")}` : null;
+      const display = home && path.startsWith(home) ? `~${path.slice(home.length)}` : path;
+      setToast(`Screenshot saved → ${display}`);
     } catch (e) {
       setToast(`Screenshot failed: ${e}`);
     }
@@ -269,7 +270,8 @@ export function ViewerScreen({
       {toast && (
         <div className="absolute left-1/2 -translate-x-1/2 bottom-24 px-4 py-2 rounded-full
                         bg-zinc-950/95 border border-white/10 text-xs text-zinc-100
-                        shadow-[0_4px_12px_-4px_rgba(0,0,0,0.6)] z-20">
+                        shadow-[0_4px_12px_-4px_rgba(0,0,0,0.6)] z-30 max-w-[80%]
+                        truncate font-mono">
           {toast}
         </div>
       )}

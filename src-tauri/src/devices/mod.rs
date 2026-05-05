@@ -22,17 +22,8 @@ pub struct PixFormat {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AudioDevice {
-    pub id: String,
-    pub label: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceList {
     pub video: Vec<VideoDevice>,
-    /// PulseAudio output sinks (speakers, headphones) for routing
-    /// captured audio playback.
-    pub audio_outputs: Vec<AudioDevice>,
 }
 
 /// Map a v4l2 fourcc into the lowercase label mpv accepts as `pixel_format`.
