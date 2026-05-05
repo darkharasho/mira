@@ -11,6 +11,7 @@ import {
   takeScreenshot,
 } from "../lib/ipc";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import warningIcon from "../assets/icons/warning.svg";
 import type { Settings } from "../lib/types";
 
 /// Single-window viewer. The mpv X11 child window is reparented into our
@@ -164,11 +165,7 @@ export function ViewerScreen({
     <div className="h-full flex flex-col relative">
       {error && (
         <div className="mx-4 mt-3 mb-2 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-warn flex items-start gap-2 z-10">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 shrink-0">
-            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
-            <line x1="12" y1="9" x2="12" y2="13" />
-            <line x1="12" y1="17" x2="12.01" y2="17" />
-          </svg>
+          <img src={warningIcon} alt="" className="w-4 h-4 mt-0.5 shrink-0" draggable={false} />
           <div className="flex-1">
             <div className="font-mono leading-snug">{error}</div>
             <button className="underline mt-1 hover:text-warn/80" onClick={onResetToStartup}>
