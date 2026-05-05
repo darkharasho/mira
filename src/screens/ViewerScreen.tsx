@@ -231,7 +231,6 @@ export function ViewerScreen({
             <PillBtn
               onClick={onMute}
               title={settings.muted ? "Unmute (M)" : "Mute (M)"}
-              active={settings.muted}
             >
               {muteIcon}
             </PillBtn>
@@ -290,18 +289,23 @@ function PillBtn({
   active?: boolean;
 }) {
   return (
-    <span className="relative group/tip inline-flex">
+    <span className="relative group/tip inline-flex flex-col items-center">
       <button
         onClick={onClick}
         aria-label={title}
-        className={`grid place-items-center w-11 h-11 rounded-full transition-all duration-150
-                    active:scale-90
-                    ${active
-                      ? "bg-accent/15 shadow-[0_0_14px_-4px_rgba(92,240,138,0.5)] hover:bg-accent/25 hover:scale-105"
-                      : "hover:bg-white/10 hover:scale-110"}`}
+        aria-pressed={active}
+        className="grid place-items-center w-11 h-11 rounded-full transition-all duration-150
+                   active:scale-90 hover:bg-white/10 hover:scale-110"
       >
         {children}
       </button>
+      <span
+        aria-hidden
+        className={`pointer-events-none absolute -bottom-1.5 h-[3px] rounded-full bg-accent
+                    shadow-[0_0_8px_rgba(92,240,138,0.7)]
+                    transition-all duration-200
+                    ${active ? "w-4 opacity-100" : "w-0 opacity-0"}`}
+      />
       <span className="absolute -top-5 left-1/2 -translate-x-1/2 px-2 py-0 rounded
                        bg-zinc-950/95 border border-white/15
                        text-[10px] font-medium text-white whitespace-nowrap leading-4
