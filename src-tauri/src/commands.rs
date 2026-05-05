@@ -2,7 +2,7 @@ use std::sync::Arc;
 use tauri::State;
 use crate::capture::{CaptureBackend, StreamConfig, StreamStats};
 use crate::capture::mpv::MpvBackend;
-use crate::devices::{DeviceList, alsa as alsa_dev, v4l2 as v4l2_dev};
+use crate::devices::{DeviceList, pulse as pulse_dev, v4l2 as v4l2_dev};
 use crate::settings::Settings;
 
 pub struct AppState {
@@ -11,7 +11,10 @@ pub struct AppState {
 
 #[tauri::command]
 pub fn list_devices() -> DeviceList {
-    DeviceList { video: v4l2_dev::enumerate(), audio: alsa_dev::enumerate() }
+    DeviceList {
+        video: v4l2_dev::enumerate(),
+        audio_outputs: pulse_dev::enumerate_sinks(),
+    }
 }
 
 #[tauri::command]
@@ -41,14 +44,25 @@ pub fn get_stats(state: State<AppState>) -> Result<StreamStats, String> {
 
 #[tauri::command]
 pub fn take_screenshot(state: State<AppState>) -> Result<String, String> {
+    tracing::info!("take_screenshot invoked");
     let dir = dirs::picture_dir()
         .unwrap_or_else(|| std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()))
         .join("elgato");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    tracing::info!(?dir, "screenshot target dir");
+    std::fs::create_dir_all(&dir).map_err(|e| {
+        tracing::error!(?e, "create_dir_all failed");
+        e.to_string()
+    })?;
     let ts = chrono::Local::now().format("%Y%m%d-%H%M%S");
     let path = dir.join(format!("capture-{ts}.png"));
-    state.backend.screenshot(&path).map_err(|e| e.to_string())?;
-    Ok(path.to_string_lossy().into_owned())
+    tracing::info!(?path, "calling backend screenshot");
+    state.backend.screenshot(&path).map_err(|e| {
+        tracing::error!(?e, "backend screenshot failed");
+        e.to_string()
+    })?;
+    let s = path.to_string_lossy().into_owned();
+    tracing::info!(path = %s, "screenshot ok");
+    Ok(s)
 }
 
 #[tauri::command]
@@ -60,17 +74,6 @@ pub fn default_settings() -> Settings { Settings::default() }
 #[tauri::command]
 pub fn set_video_region(state: State<AppState>, w: u32, h: u32, x: i32, y: i32) {
     state.backend.set_region(w, h, x, y);
-}
-
-/// Update the overlay window's XShape input region: the union of these
-/// rectangles is where mouse events get caught; outside, events pass
-/// through to the main window. Called by the overlay React on layout.
-#[tauri::command]
-pub fn set_overlay_input_region(
-    state: State<AppState>,
-    rects: Vec<(i32, i32, u32, u32)>,
-) {
-    state.backend.apply_overlay_input_region(&rects);
 }
 
 /// Show or hide the embedded video. Called when the settings panel

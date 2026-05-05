@@ -1,0 +1,90 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  release:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "20", cache: "npm" }
+
+      - name: Cache apt packages
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          # webkit2gtk + gtk for Tauri; v4l/alsa/udev for our device
+          # enumeration crates; file is needed by tauri's appimage step.
+          packages: >
+            libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev
+            libayatana-appindicator3-dev librsvg2-dev
+            libsoup-3.0-dev libjavascriptcoregtk-4.1-dev file
+            libv4l-dev libasound2-dev libudev-dev
+          version: 1.0
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+
+      - name: Build AppImage (signed)
+        run: npx tauri build --bundles appimage
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: Generate latest.json
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+
+          APPIMAGE=$(ls src-tauri/target/release/bundle/appimage/*.AppImage | grep -v '\.sig' | head -1)
+          SIG_FILE="${APPIMAGE}.sig"
+          APPIMAGE_NAME=$(basename "$APPIMAGE")
+          SIG=$(cat "$SIG_FILE")
+          PUB_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          cat > latest.json <<JSON
+          {
+            "version": "$VERSION",
+            "notes": "See the GitHub release page for details.",
+            "pub_date": "$PUB_DATE",
+            "platforms": {
+              "linux-x86_64": {
+                "signature": "$SIG",
+                "url": "https://github.com/${{ github.repository }}/releases/download/$TAG/$APPIMAGE_NAME"
+              }
+            }
+          }
+          JSON
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || true)
+          if [ -n "$PREV_TAG" ]; then
+            NOTES=$(git log --pretty=format:"- %s" "${PREV_TAG}..HEAD")
+          else
+            NOTES=$(git log --pretty=format:"- %s")
+          fi
+
+          APPIMAGE=$(ls src-tauri/target/release/bundle/appimage/*.AppImage | grep -v '\.sig' | head -1)
+          SIG_FILE="${APPIMAGE}.sig"
+
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes "$NOTES" \
+            "$APPIMAGE" \
+            "$SIG_FILE" \
+            "latest.json"

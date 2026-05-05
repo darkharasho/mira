@@ -8,7 +8,7 @@ mod commands;
 
 use std::sync::Arc;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri::{Emitter, Manager};
 use crate::capture::CaptureBackend;
 use crate::capture::mpv::MpvBackend;
 use crate::commands::AppState;
@@ -32,6 +32,8 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             commands::list_devices,
@@ -43,14 +45,11 @@ fn main() {
             commands::take_screenshot,
             commands::default_settings,
             commands::set_video_region,
-            commands::set_overlay_input_region,
             commands::set_video_visible,
         ])
         .setup(move |app| {
             crate::hotplug::spawn(app.handle().clone());
 
-            // Wait for the main window's X11 surface to be realized, then
-            // grab its ID + spawn a sibling overlay above it.
             let main_win = app.get_webview_window("main").unwrap();
             if let Some(xid) = x11_window_id(&main_win) {
                 tracing::info!(xid, "captured main window X11 id for mpv child");
@@ -60,55 +59,6 @@ fn main() {
                     "could not resolve main window X11 id — embedded video unavailable"
                 );
             }
-
-            // Build the overlay window — full size of main, transparent,
-            // always-on-top. Hosts ALL chrome (top status, floating pill,
-            // settings panel). XShape constrains its input region to only
-            // the chrome rectangles so the transparent middle passes
-            // mouse events through to mpv in the main window below.
-            let pos = main_win.outer_position().unwrap_or_default();
-            let size = main_win.outer_size().unwrap_or_default();
-            let overlay = WebviewWindowBuilder::new(
-                app,
-                "overlay",
-                WebviewUrl::App("index.html".into()),
-            )
-            .title("Elgato Capture (overlay)")
-            .decorations(false)
-            .transparent(true)
-            .always_on_top(true)
-            .skip_taskbar(true)
-            .focused(false)
-            .accept_first_mouse(false)
-            .position(pos.x as f64, pos.y as f64)
-            .inner_size(size.width as f64, size.height as f64)
-            .build()
-            .expect("overlay window build failed");
-            tracing::info!("overlay window created");
-            if let Some(overlay_xid) = x11_window_id(&overlay) {
-                backend_for_setup.set_overlay_xid(overlay_xid);
-            }
-
-            // Position-track: keep overlay matching main exactly.
-            let overlay_for_track = overlay.clone();
-            let main_for_event = main_win.clone();
-            main_win.on_window_event(move |event| match event {
-                WindowEvent::Moved(p) => {
-                    let _ = overlay_for_track
-                        .set_position(tauri::PhysicalPosition::new(p.x, p.y));
-                }
-                WindowEvent::Resized(s) => {
-                    let _ = overlay_for_track
-                        .set_size(tauri::PhysicalSize::new(s.width, s.height));
-                }
-                WindowEvent::CloseRequested { .. } => {
-                    if let Some(overlay) = main_for_event.app_handle().get_webview_window("overlay")
-                    {
-                        let _ = overlay.close();
-                    }
-                }
-                _ => {}
-            });
 
             let backend_for_stats = backend_for_setup.clone();
             let app_handle_for_stats = app.handle().clone();

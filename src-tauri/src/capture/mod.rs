@@ -6,10 +6,15 @@ pub mod x11_child;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StreamConfig {
     pub video_device: String,
+    /// Alsa hw identifier of the audio sibling for the video device,
+    /// already wrapped to the low-latency dsnoop PCM if available.
     pub audio_device: String,
     pub pix_fmt: String,
     pub volume: u8,
     pub muted: bool,
+    /// Optional pulse sink name to route capture audio output through.
+    /// None = use system default sink.
+    pub audio_output: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

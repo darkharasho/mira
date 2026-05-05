@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Elgato Capture",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "com.darkharasho.elgato-capture",
   "build": {
     "frontendDist": "../dist",
@@ -14,8 +14,8 @@
       {
         "label": "main",
         "title": "Elgato Capture",
-        "width": 1600,
-        "height": 1080,
+        "width": 1952,
+        "height": 1196,
         "minWidth": 800,
         "minHeight": 600,
         "decorations": false,
@@ -31,6 +31,7 @@
   "bundle": {
     "active": true,
     "targets": ["appimage", "deb", "rpm"],
+    "createUpdaterArtifacts": true,
     "category": "Video",
     "shortDescription": "Low-latency Elgato capture viewer",
     "longDescription": "A polished Linux/Wayland viewer for Elgato capture cards using libmpv.",
@@ -47,6 +48,14 @@
     },
     "android": {
       "debugApplicationIdSuffix": ".debug"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDMzQjZCREYwMjg0MzU3MTcKUldRWFYwTW84TDIyTThmUCs0NG9Qek5jQjJnaFZ3UE84eGw1N1RMMi83SWNMYWxDekJ4aEVoZVYK",
+      "endpoints": [
+        "https://github.com/darkharasho/linux-game-streamer/releases/latest/download/latest.json"
+      ]
     }
   }
 }

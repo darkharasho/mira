@@ -3,24 +3,34 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Settings {
     pub video_device: Option<String>,
-    pub audio_device: Option<String>,
     pub pix_fmt: Option<String>,
     pub volume: u8,
     pub muted: bool,
     pub show_stats: bool,
     pub skip_startup: bool,
+    #[serde(default = "default_display_resolution")]
+    pub display_resolution: String,
+    /// PulseAudio sink name to play captured audio through. None = use
+    /// the system default sink.
+    #[serde(default)]
+    pub audio_output: Option<String>,
+}
+
+fn default_display_resolution() -> String {
+    "1080p".to_string()
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
             video_device: None,
-            audio_device: None,
             pix_fmt: Some("yuyv422".to_string()),
             volume: 100,
             muted: false,
             show_stats: true,
             skip_startup: true,
+            display_resolution: default_display_resolution(),
+            audio_output: None,
         }
     }
 }
@@ -33,12 +43,13 @@ mod tests {
     fn round_trips_through_json() {
         let s = Settings {
             video_device: Some("/dev/video2".into()),
-            audio_device: Some("hw:6,0".into()),
             pix_fmt: Some("yuyv422".into()),
             volume: 80,
             muted: true,
             show_stats: false,
             skip_startup: true,
+            display_resolution: "1440p".into(),
+            audio_output: Some("alsa_output.usb-Audioengine".into()),
         };
         let json = serde_json::to_string(&s).unwrap();
         let back: Settings = serde_json::from_str(&json).unwrap();

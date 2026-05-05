@@ -1,13 +1,18 @@
 use serde::{Deserialize, Serialize};
 
 pub mod v4l2;
-pub mod alsa;
+pub mod pulse;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VideoDevice {
     pub path: String,
     pub name: String,
     pub formats: Vec<PixFormat>,
+    /// Auto-derived alsa capture identifier (e.g. "hw:4,0") for the
+    /// audio sibling on the same USB device. None for v4l2 devices
+    /// without an associated USB audio interface (webcams without a
+    /// mic, virtual devices, etc.).
+    pub audio_capture: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,7 +30,9 @@ pub struct AudioDevice {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceList {
     pub video: Vec<VideoDevice>,
-    pub audio: Vec<AudioDevice>,
+    /// PulseAudio output sinks (speakers, headphones) for routing
+    /// captured audio playback.
+    pub audio_outputs: Vec<AudioDevice>,
 }
 
 /// Map a v4l2 fourcc into the lowercase label mpv accepts as `pixel_format`.

@@ -12,7 +12,7 @@ export function StartupScreen({
 }) {
   const { devices, loading, refresh } = useDevices();
   const [video, setVideo] = useState<string | null>(initial.video_device);
-  const [audio, setAudio] = useState<string | null>(initial.audio_device);
+  const [output, setOutput] = useState<string | null>(initial.audio_output);
   const [pixFmt, setPixFmt] = useState<string | null>(initial.pix_fmt);
   const [skip, setSkip] = useState(initial.skip_startup);
 
@@ -24,8 +24,7 @@ export function StartupScreen({
   useEffect(() => {
     if (loading) return;
     if (!video && devices.video[0]) setVideo(devices.video[0].path);
-    if (!audio && devices.audio[0]) setAudio(devices.audio[0].id);
-  }, [loading, devices, video, audio]);
+  }, [loading, devices, video]);
 
   useEffect(() => {
     if (!selectedVideo) return;
@@ -35,7 +34,7 @@ export function StartupScreen({
     }
   }, [selectedVideo, pixFmt]);
 
-  const ready = !!video && !!audio && !!pixFmt;
+  const ready = !!video && !!pixFmt;
 
   return (
     <div className="h-full flex flex-col p-5">
@@ -73,10 +72,13 @@ export function StartupScreen({
           disabled={loading}
         />
         <DevicePicker
-          label="Audio source"
-          value={audio}
-          onChange={setAudio}
-          options={devices.audio.map((d) => ({ value: d.id, label: d.label }))}
+          label="Audio output"
+          value={output ?? "__default__"}
+          onChange={(v) => setOutput(v === "__default__" ? null : v)}
+          options={[
+            { value: "__default__", label: "System default" },
+            ...devices.audio_outputs.map((d) => ({ value: d.id, label: d.label })),
+          ]}
           disabled={loading}
         />
         <DevicePicker
@@ -107,7 +109,7 @@ export function StartupScreen({
           onStart({
             ...initial,
             video_device: video,
-            audio_device: audio,
+            audio_output: output,
             pix_fmt: pixFmt,
             skip_startup: skip,
           })

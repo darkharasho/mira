@@ -6,6 +6,7 @@
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
+use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -20,6 +21,9 @@ use super::{CaptureBackend, CaptureError, StreamConfig, StreamStats};
 struct Running {
     child: Child,
     socket_path: String,
+    /// Pulse source name we suspended on start; on stop we unsuspend
+    /// it so other apps (browsers, OBS, etc.) can use the device.
+    suspended_pulse_source: Option<String>,
 }
 
 pub struct MpvBackend {
@@ -27,10 +31,6 @@ pub struct MpvBackend {
     request_id: AtomicU64,
     /// Child X11 window we own and reparent mpv into.
     child: Mutex<Option<X11Child>>,
-    /// X11 ID of the always-on-top overlay window. Used by the
-    /// XShape input-region command so the transparent middle of the
-    /// overlay passes mouse events through to the main window.
-    overlay_xid: Mutex<Option<u32>>,
 }
 
 impl MpvBackend {
@@ -39,7 +39,6 @@ impl MpvBackend {
             inner: Mutex::new(None),
             request_id: AtomicU64::new(1),
             child: Mutex::new(None),
-            overlay_xid: Mutex::new(None),
         }
     }
 
@@ -51,25 +50,6 @@ impl MpvBackend {
         match X11Child::create(xid as u32) {
             Ok(child) => *guard = Some(child),
             Err(e) => tracing::error!(?e, "failed to create child X11 window"),
-        }
-    }
-
-    pub fn set_overlay_xid(&self, xid: u64) {
-        *self.overlay_xid.lock().unwrap() = Some(xid as u32);
-        tracing::info!(xid, "captured overlay window X11 id");
-    }
-
-    /// Apply an XShape input region to the overlay window so that only
-    /// the listed rectangles receive mouse events; everything else
-    /// passes through to the window below.
-    pub fn apply_overlay_input_region(&self, rects: &[(i32, i32, u32, u32)]) {
-        let xid = *self.overlay_xid.lock().unwrap();
-        let Some(xid) = xid else {
-            tracing::warn!("apply_overlay_input_region: overlay xid not set yet");
-            return;
-        };
-        if let Err(e) = super::x11_child::set_input_region(xid, rects) {
-            tracing::warn!(?e, "x11 input region failed");
         }
     }
 
@@ -180,6 +160,21 @@ fn fresh_socket_path() -> String {
     format!("/tmp/elgato-capture-{pid}-{nanos}.sock")
 }
 
+fn mpv_log_path() -> String {
+    let pid = std::process::id();
+    format!("/tmp/elgato-capture-mpv-{pid}.log")
+}
+
+/// Map an alsa hw identifier to the matching low-latency dsnoop PCM
+/// from ~/.asoundrc. The dsnoop wrapper imposes a small (1024-sample)
+/// buffer that FFmpeg's hardcoded buffer request can't bypass.
+fn alsa_lowlatency_pcm(audio_device: &str) -> String {
+    match audio_device {
+        "hw:4,0" => "elgato_lowlatency".to_string(),
+        other => other.to_string(),
+    }
+}
+
 impl CaptureBackend for MpvBackend {
     fn start(&self, cfg: &StreamConfig) -> Result<(), CaptureError> {
         let mut guard = self.inner.lock().unwrap();
@@ -217,6 +212,30 @@ impl CaptureBackend for MpvBackend {
             cmd.env_remove("WAYLAND_DISPLAY");
             tracing::info!(child_xid, "embedding mpv into our child X11 window");
         }
+        let log_path = mpv_log_path();
+        let log_file = std::fs::File::create(&log_path)
+            .map_err(|e| CaptureError::Mpv(format!("open mpv log {log_path}: {e}")))?;
+        let log_file_err = log_file
+            .try_clone()
+            .map_err(|e| CaptureError::Mpv(format!("dup mpv log: {e}")))?;
+
+        // pipewire-pulse claims USB capture devices the moment any
+        // client opens its source. Suspend it so we can open hw:N,0
+        // alsa-direct (low latency, same path as elgato-capture.sh).
+        let suspended_pulse_source = super::super::devices::pulse::pulse_source_for_alsa(&cfg.audio_device);
+        if let Some(name) = &suspended_pulse_source {
+            super::super::devices::pulse::set_suspended(name, true);
+            tracing::info!(source = %name, "suspended pulse source for alsa-direct capture");
+        }
+
+        // Route the capture audio output through the user's chosen
+        // pulse sink. mpv's pipewire AO honors PULSE_SINK indirectly
+        // through the pulse compat layer.
+        if let Some(sink) = &cfg.audio_output {
+            cmd.env("PULSE_SINK", sink);
+            tracing::info!(sink = %sink, "routing audio output to pulse sink");
+        }
+
         cmd.arg("--profile=low-latency")
             // Suppress mpv's own UI — no on-screen controller, no OSD
             // text, no input bindings/cursor. The control surface lives
@@ -226,26 +245,49 @@ impl CaptureBackend for MpvBackend {
             .arg("--input-default-bindings=no")
             .arg("--input-vo-keyboard=no")
             .arg("--cursor-autohide=always")
+            .arg("--msg-level=all=v")
             .arg("--no-cache")
             .arg("--untimed")
             .arg("--video-latency-hacks=yes")
             .arg("--vd-lavc-threads=1")
             .arg("--demuxer-readahead-secs=0")
-            .arg("--demuxer-lavf-format=video4linux2")
+            // FFmpeg's alsa demuxer reports wallclock timestamps (unix
+            // epoch) while v4l2 reports monotonic from zero. Without
+            // this, mpv's "delaying audio start" diff is ~56 years and
+            // audio never plays.
+            .arg("--initial-audio-sync=no")
             .arg(format!("--demuxer-lavf-o=pixel_format={}", cfg.pix_fmt))
             .arg("--demuxer-lavf-probesize=32")
             .arg("--demuxer-lavf-analyzeduration=0")
-            .arg(format!("--audio-file=av://alsa:{}", cfg.audio_device))
+            // FFmpeg's alsa input hardcodes a ~524k-sample buffer
+            // request, which the Elgato satisfies with 96000 frames =
+            // 2 seconds, and audio is permanently 1-2s behind. We
+            // route through a `dsnoop` PCM defined in ~/.asoundrc with
+            // a 1024-sample slave buffer (~21ms) instead.
+            .arg(format!("--audio-file=av://alsa:{}", alsa_lowlatency_pcm(&cfg.audio_device)))
             .arg(format!("--volume={}", cfg.volume))
             .arg(format!("--mute={}", if cfg.muted { "yes" } else { "no" }))
             .arg("--title=Elgato Capture")
             .arg(format!("--input-ipc-server={socket_path}"))
             .arg(&cfg.video_device)
             .stdin(Stdio::null())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit());
+            .stdout(Stdio::from(log_file))
+            .stderr(Stdio::from(log_file_err));
 
-        tracing::info!(?cfg, %socket_path, "spawning mpv");
+        // Ask the kernel to SIGTERM mpv as soon as our process exits —
+        // including hard crashes / Vite HMR restarts where stop() never
+        // runs. Without this, mpv survives, holds /dev/videoN, and the
+        // next launch fails with "avformat_open_input() failed".
+        unsafe {
+            cmd.pre_exec(|| {
+                if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM) == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+
+        tracing::info!(?cfg, %socket_path, log = %log_path, "spawning mpv");
         let child = cmd.spawn().map_err(|e| {
             CaptureError::Mpv(format!("failed to spawn mpv: {e}"))
         })?;
@@ -260,7 +302,11 @@ impl CaptureBackend for MpvBackend {
             std::thread::sleep(Duration::from_millis(50));
         }
 
-        *guard = Some(Running { child, socket_path });
+        *guard = Some(Running {
+            child,
+            socket_path,
+            suspended_pulse_source,
+        });
         Ok(())
     }
 
@@ -269,16 +315,23 @@ impl CaptureBackend for MpvBackend {
         if let Some(mut running) = guard.take() {
             let _ = self.ipc(&running.socket_path, json!({"command": ["quit"]}));
             // Give mpv a moment to exit cleanly, then SIGKILL.
+            let mut waited_clean = false;
             for _ in 0..20 {
                 if let Ok(Some(_)) = running.child.try_wait() {
-                    let _ = std::fs::remove_file(&running.socket_path);
-                    return Ok(());
+                    waited_clean = true;
+                    break;
                 }
                 std::thread::sleep(Duration::from_millis(50));
             }
-            let _ = running.child.kill();
-            let _ = running.child.wait();
+            if !waited_clean {
+                let _ = running.child.kill();
+                let _ = running.child.wait();
+            }
             let _ = std::fs::remove_file(&running.socket_path);
+            if let Some(name) = &running.suspended_pulse_source {
+                super::super::devices::pulse::set_suspended(name, false);
+                tracing::info!(source = %name, "released pulse source suspension");
+            }
         }
         Ok(())
     }
