@@ -200,6 +200,29 @@ impl CaptureBackend for MpvBackend {
         let program = mpv_executable();
         tracing::info!(program = %program, "spawning mpv subprocess");
         let mut cmd = Command::new(&program);
+        // When we're running from an AppImage, AppRun sets LD_LIBRARY_PATH
+        // (plus GIO/GTK/etc.) to $APPDIR/usr/lib so the bundled webkit2gtk
+        // resolves correctly. Those vars get inherited by every child,
+        // including system /usr/bin/mpv — which then loads bundled libs
+        // that ABI-mismatch host libs (e.g. an older libnghttp2 missing
+        // symbols host libcurl needs) and dies at startup. Scrub them so
+        // mpv links cleanly against the host's library set.
+        for var in [
+            "LD_LIBRARY_PATH",
+            "LD_PRELOAD",
+            "GIO_MODULE_DIR",
+            "GTK_PATH",
+            "GTK_EXE_PREFIX",
+            "GDK_PIXBUF_MODULE_FILE",
+            "GDK_PIXBUF_MODULEDIR",
+            "GST_PLUGIN_PATH",
+            "GST_PLUGIN_SYSTEM_PATH",
+            "FONTCONFIG_PATH",
+            "FONTCONFIG_FILE",
+            "XDG_DATA_DIRS",
+        ] {
+            cmd.env_remove(var);
+        }
         if let Some(child_xid) = self.child.lock().unwrap().as_ref().map(|c| c.xid) {
             cmd.arg(format!("--wid={child_xid}"))
                 // GL through XWayland into a Tauri-parented child window
