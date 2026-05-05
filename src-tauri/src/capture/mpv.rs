@@ -132,7 +132,36 @@ impl Default for MpvBackend {
     }
 }
 
-fn mpv_executable() -> String {
+/// True when the process is running inside a distrobox / podman / toolbox
+/// container. We detect via the container runtime's marker file.
+fn in_container() -> bool {
+    std::path::Path::new("/run/.containerenv").is_file()
+        || std::env::var("container").is_ok()
+}
+
+/// Pick the executable that will run mpv. Inside a container, defer to
+/// `distrobox-host-exec` so mpv launches on the host where the GPU,
+/// compositor, and audio stack live — the container's mesa stack can't
+/// reach the host GPU and falls back to software rendering, which
+/// starves the audio pipeline. Outside containers (AppImage / native),
+/// call mpv directly.
+///
+/// Returns `(program, leading_args)` so the caller can append the rest
+/// of mpv's flags. /tmp is shared across the distrobox boundary, so the
+/// JSON IPC socket is reachable from both sides.
+fn mpv_command() -> (String, Vec<String>) {
+    if in_container() {
+        if let Some(host_exec) = first_existing(&[
+            "/usr/bin/distrobox-host-exec",
+            "/usr/local/bin/distrobox-host-exec",
+        ]) {
+            return (host_exec, vec!["mpv".into()]);
+        }
+    }
+    (mpv_path_in_path(), Vec::new())
+}
+
+fn mpv_path_in_path() -> String {
     if let Ok(path) = std::env::var("PATH") {
         for dir in path.split(':').filter(|s| !s.is_empty()) {
             let candidate = std::path::Path::new(dir).join("mpv");
@@ -167,7 +196,8 @@ fn mpv_log_path() -> String {
 
 /// Map an alsa hw identifier to the matching low-latency dsnoop PCM
 /// from ~/.asoundrc. The dsnoop wrapper imposes a small (1024-sample)
-/// buffer that FFmpeg's hardcoded buffer request can't bypass.
+/// buffer that FFmpeg's hardcoded 524k-sample request can't bypass —
+/// without it, audio is permanently 1-2s behind real time.
 fn alsa_lowlatency_pcm(audio_device: &str) -> String {
     match audio_device {
         "hw:4,0" => "elgato_lowlatency".to_string(),
@@ -196,10 +226,16 @@ impl CaptureBackend for MpvBackend {
         let _ = std::fs::remove_file(&socket_path);
 
         // mpv runs as a real OS subprocess and embeds into a child X11
-        // window we own (sized to the React layout's video slot).
-        let program = mpv_executable();
-        tracing::info!(program = %program, "spawning mpv subprocess");
+        // window we own (sized to the React layout's video slot). When
+        // we're inside a container, prepend distrobox-host-exec so mpv
+        // runs on the host with real GPU access — the X11 child XID is
+        // just a number and DISPLAY is shared across the boundary.
+        let (program, leading_args) = mpv_command();
+        tracing::info!(program = %program, leading = ?leading_args, "spawning mpv subprocess");
         let mut cmd = Command::new(&program);
+        for a in &leading_args {
+            cmd.arg(a);
+        }
         // When we're running from an AppImage, AppRun sets LD_LIBRARY_PATH
         // (plus GIO/GTK/etc.) to $APPDIR/usr/lib so the bundled webkit2gtk
         // resolves correctly. Those vars get inherited by every child,
@@ -207,30 +243,42 @@ impl CaptureBackend for MpvBackend {
         // that ABI-mismatch host libs (e.g. an older libnghttp2 missing
         // symbols host libcurl needs) and dies at startup. Scrub them so
         // mpv links cleanly against the host's library set.
-        for var in [
-            "LD_LIBRARY_PATH",
-            "LD_PRELOAD",
-            "GIO_MODULE_DIR",
-            "GTK_PATH",
-            "GTK_EXE_PREFIX",
-            "GDK_PIXBUF_MODULE_FILE",
-            "GDK_PIXBUF_MODULEDIR",
-            "GST_PLUGIN_PATH",
-            "GST_PLUGIN_SYSTEM_PATH",
-            "FONTCONFIG_PATH",
-            "FONTCONFIG_FILE",
-            "XDG_DATA_DIRS",
-        ] {
-            cmd.env_remove(var);
+        //
+        // Only do this in AppImage runs — outside the AppImage, things
+        // like XDG_DATA_DIRS are legitimate (pipewire/alsa plugin
+        // discovery, etc.) and stripping them changes mpv's audio
+        // behavior in dev/distrobox.
+        let in_appimage = std::env::var_os("APPIMAGE").is_some()
+            || std::env::var_os("APPDIR").is_some();
+        if in_appimage {
+            for var in [
+                "LD_LIBRARY_PATH",
+                "LD_PRELOAD",
+                "GIO_MODULE_DIR",
+                "GTK_PATH",
+                "GTK_EXE_PREFIX",
+                "GDK_PIXBUF_MODULE_FILE",
+                "GDK_PIXBUF_MODULEDIR",
+                "GST_PLUGIN_PATH",
+                "GST_PLUGIN_SYSTEM_PATH",
+                "FONTCONFIG_PATH",
+                "FONTCONFIG_FILE",
+                "XDG_DATA_DIRS",
+            ] {
+                cmd.env_remove(var);
+            }
         }
         if let Some(child_xid) = self.child.lock().unwrap().as_ref().map(|c| c.xid) {
             cmd.arg(format!("--wid={child_xid}"))
-                // GL through XWayland into a Tauri-parented child window
-                // hits visual-mismatch errors (GLXBadCurrentWindow on
-                // x11/GLX, software fallback on x11egl). XV uses X-Video
-                // directly with no GL context, and almost always works
-                // on XWayland for capture-card-style streams.
-                .arg("--vo=xv")
+                // GL VO embedded in the X11 child via x11 GLX context.
+                // xv was the previous fallback when GL-through-XWayland
+                // failed inside the container, but xv forces a CPU
+                // yuyv422→uyvy422 conversion at 1080p60 that starves
+                // the audio demuxer. Now that mpv runs on the host
+                // (via distrobox-host-exec), the host's GPU drives
+                // GL natively — no conversion, no audio xruns.
+                .arg("--vo=gpu")
+                .arg("--gpu-context=x11")
                 .arg("--hwdec=no");
             cmd.env_remove("WAYLAND_DISPLAY");
             tracing::info!(child_xid, "embedding mpv into our child X11 window");
@@ -275,18 +323,25 @@ impl CaptureBackend for MpvBackend {
             .arg("--vd-lavc-threads=1")
             .arg("--demuxer-readahead-secs=0")
             // FFmpeg's alsa demuxer reports wallclock timestamps (unix
-            // epoch) while v4l2 reports monotonic from zero. Without
-            // this, mpv's "delaying audio start" diff is ~56 years and
-            // audio never plays.
+            // epoch) while v4l2 reports monotonic from zero — they
+            // differ by ~56 years. `--initial-audio-sync=no` keeps mpv
+            // from waiting that long at start, but the low-latency
+            // profile also sets `video-sync=audio`, which clock-locks
+            // video to the runaway audio stream and produces a frame
+            // every ~minute. `--video-sync=desync` lets each track
+            // free-run at its own rate — correct for live capture
+            // where there's no shared timeline anyway.
             .arg("--initial-audio-sync=no")
+            .arg("--video-sync=desync")
+            // low-latency profile sets audio-buffer=0, which combined
+            // with dsnoop's 21ms ALSA buffer guarantees xruns on every
+            // scheduling jitter — the AO starves and audio drops out
+            // entirely. 100ms of AO buffer absorbs jitter without
+            // adding noticeable lip-sync delay for game capture.
+            .arg("--audio-buffer=0.1")
             .arg(format!("--demuxer-lavf-o=pixel_format={}", cfg.pix_fmt))
             .arg("--demuxer-lavf-probesize=32")
             .arg("--demuxer-lavf-analyzeduration=0")
-            // FFmpeg's alsa input hardcodes a ~524k-sample buffer
-            // request, which the Elgato satisfies with 96000 frames =
-            // 2 seconds, and audio is permanently 1-2s behind. We
-            // route through a `dsnoop` PCM defined in ~/.asoundrc with
-            // a 1024-sample slave buffer (~21ms) instead.
             .arg(format!("--audio-file=av://alsa:{}", alsa_lowlatency_pcm(&cfg.audio_device)))
             .arg(format!("--volume={}", cfg.volume))
             .arg(format!("--mute={}", if cfg.muted { "yes" } else { "no" }))
