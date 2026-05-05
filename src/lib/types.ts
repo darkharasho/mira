@@ -19,7 +19,7 @@ export interface StreamConfig {
   audio_output: string | null;
 }
 export interface StreamStats {
-  width: number; height: number; fps: number; pix_fmt: string; latency_ms: number;
+  width: number; height: number; fps: number; pix_fmt: string; frame_drops: number;
 }
 export type DisplayResolution = "720p" | "1080p" | "1440p";
 

@@ -501,15 +501,20 @@ impl CaptureBackend for MpvBackend {
         let height = get("height").as_u64().unwrap_or(0) as u32;
         let fps = get("estimated-vf-fps").as_f64().unwrap_or(0.0) as f32;
         let pix_fmt = get("video-format").as_str().unwrap_or("").to_string();
-        let latency_ms =
-            (get("vo-delay").as_f64().unwrap_or(0.0) * 1000.0).round() as u32;
+        // vo-delay is meaningless under --video-sync=desync (always 0).
+        // Frame drops since stream start are the headline indicator
+        // that the pipeline is keeping up.
+        let frame_drops = get("frame-drop-count")
+            .as_u64()
+            .or_else(|| get("decoder-frame-drop-count").as_u64())
+            .unwrap_or(0) as u32;
 
         Ok(StreamStats {
             width,
             height,
             fps,
             pix_fmt,
-            latency_ms,
+            frame_drops,
         })
     }
 }

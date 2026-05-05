@@ -23,7 +23,7 @@ pub struct StreamStats {
     pub height: u32,
     pub fps: f32,
     pub pix_fmt: String,
-    pub latency_ms: u32,
+    pub frame_drops: u32,
 }
 
 #[derive(Debug, thiserror::Error)]

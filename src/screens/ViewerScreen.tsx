@@ -252,7 +252,7 @@ export function ViewerScreen({
         {settings.show_stats && stats && status === "running" && (
           <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-mono text-zinc-400
                            tabular-nums select-none whitespace-nowrap pointer-events-none">
-            {stats.width}×{stats.height} · {stats.fps.toFixed(1)}fps · {stats.latency_ms}ms
+            {stats.width}×{stats.height} · {stats.fps.toFixed(1)}fps · {stats.frame_drops} drops
           </span>
         )}
       </div>
