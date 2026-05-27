@@ -8,3 +8,4 @@ build
 .superpowers
 src-tauri/target
 
+graphify-out/
