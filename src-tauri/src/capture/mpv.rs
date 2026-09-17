@@ -215,6 +215,10 @@ impl CaptureBackend for MpvBackend {
         if cfg.video_device.is_empty() {
             return Err(CaptureError::Other("video_device is empty".into()));
         }
+        // FFmpeg only auto-detects the v4l2 demuxer from a /dev/videoN
+        // name, so resolve stable /dev/v4l/by-id symlinks first.
+        let video_node = std::fs::canonicalize(&cfg.video_device)
+            .unwrap_or_else(|_| cfg.video_device.clone().into());
         if cfg.pix_fmt.is_empty() {
             return Err(CaptureError::Other("pix_fmt is empty".into()));
         }
@@ -345,7 +349,7 @@ impl CaptureBackend for MpvBackend {
             .arg(format!("--mute={}", if cfg.muted { "yes" } else { "no" }))
             .arg("--title=Mira")
             .arg(format!("--input-ipc-server={socket_path}"))
-            .arg(&cfg.video_device)
+            .arg(&video_node)
             .stdin(Stdio::null())
             .stdout(Stdio::from(log_file))
             .stderr(Stdio::from(log_file_err));

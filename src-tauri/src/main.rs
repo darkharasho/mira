@@ -18,6 +18,11 @@ fn main() {
     // --wid flag, and our overlay window uses XShape to define its input
     // region — both require X11 surfaces.
     std::env::set_var("GDK_BACKEND", "x11");
+    // WebKitGTK's DMA-BUF renderer fails GBM allocation on some GPU/Mesa
+    // combos and leaves the window blank. Respect an explicit override.
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
 
     tracing_subscriber::fmt()
         .with_env_filter(
