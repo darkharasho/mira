@@ -215,9 +215,6 @@ impl CaptureBackend for MpvBackend {
         if cfg.video_device.is_empty() {
             return Err(CaptureError::Other("video_device is empty".into()));
         }
-        if cfg.audio_device.is_empty() {
-            return Err(CaptureError::Other("audio_device is empty".into()));
-        }
         if cfg.pix_fmt.is_empty() {
             return Err(CaptureError::Other("pix_fmt is empty".into()));
         }
@@ -293,7 +290,14 @@ impl CaptureBackend for MpvBackend {
         // pipewire-pulse claims USB capture devices the moment any
         // client opens its source. Suspend it so we can open hw:N,0
         // alsa-direct (low latency, same path as elgato-capture.sh).
-        let suspended_pulse_source = super::super::devices::pulse::pulse_source_for_alsa(&cfg.audio_device);
+        // An empty audio_device means the video device has no USB audio
+        // sibling (webcam without a mic, v4l2loopback) — stream video only.
+        let has_audio = !cfg.audio_device.is_empty();
+        let suspended_pulse_source = if has_audio {
+            super::super::devices::pulse::pulse_source_for_alsa(&cfg.audio_device)
+        } else {
+            None
+        };
         if let Some(name) = &suspended_pulse_source {
             super::super::devices::pulse::set_suspended(name, true);
             tracing::info!(source = %name, "suspended pulse source for alsa-direct capture");
@@ -337,7 +341,6 @@ impl CaptureBackend for MpvBackend {
             .arg(format!("--demuxer-lavf-o=pixel_format={}", cfg.pix_fmt))
             .arg("--demuxer-lavf-probesize=32")
             .arg("--demuxer-lavf-analyzeduration=0")
-            .arg(format!("--audio-file=av://alsa:{}", alsa_lowlatency_pcm(&cfg.audio_device)))
             .arg(format!("--volume={}", cfg.volume))
             .arg(format!("--mute={}", if cfg.muted { "yes" } else { "no" }))
             .arg("--title=Mira")
@@ -346,6 +349,9 @@ impl CaptureBackend for MpvBackend {
             .stdin(Stdio::null())
             .stdout(Stdio::from(log_file))
             .stderr(Stdio::from(log_file_err));
+        if has_audio {
+            cmd.arg(format!("--audio-file=av://alsa:{}", alsa_lowlatency_pcm(&cfg.audio_device)));
+        }
 
         // Ask the kernel to SIGTERM mpv as soon as our process exits —
         // including hard crashes / Vite HMR restarts where stop() never

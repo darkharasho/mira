@@ -21,7 +21,7 @@ import {
   SpeakerSlash,
   Warning,
 } from "@phosphor-icons/react";
-import type { Settings } from "../lib/types";
+import { findVideoDevice, type Settings } from "../lib/types";
 
 /// Single-window viewer. The mpv X11 child window is reparented into our
 /// Tauri toplevel and sized to the `videoSlotRef` rectangle — i.e. the
@@ -42,7 +42,7 @@ export function ViewerScreen({
   onToggleFullscreen: () => void;
 }) {
   const { state, error, start, stop } = useStream();
-  const { devices } = useDevices();
+  const { devices, loading: devicesLoading } = useDevices();
   const stats = useStats();
   const videoSlotRef = useRef<HTMLDivElement | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -84,35 +84,44 @@ export function ViewerScreen({
     return () => window.clearTimeout(t);
   }, [toast]);
 
-  // Audio capture device follows whichever video device is selected
-  // (via the matching USB sibling resolved on the Rust side).
-  const audioCapture = useMemo(
-    () =>
-      devices.video.find((d) => d.path === settings.video_device)?.audio_capture ?? null,
+  // Resolve the saved device against the live list. Audio capture follows
+  // whichever video device is selected (via the matching USB sibling
+  // resolved on the Rust side).
+  const device = useMemo(
+    () => findVideoDevice(devices.video, settings.video_device),
     [devices.video, settings.video_device],
   );
+  const devicePath = device?.path ?? null;
+  const audioCapture = device?.audio_capture ?? null;
+  const deviceMissing = !devicesLoading && !device;
 
-  const cfg = useMemo(
-    () => ({
-      video_device: settings.video_device!,
+  // Settings saved before stable paths existed hold a raw /dev/videoN
+  // node. Rewrite to the by-id path so a later renumbering can't point
+  // the selection at a different camera.
+  useEffect(() => {
+    if (devicePath && devicePath !== settings.video_device) {
+      onChangeSettings({ video_device: devicePath });
+    }
+  }, [devicePath, settings.video_device, onChangeSettings]);
+
+  // Restart the stream whenever any setting that mpv consumes at start
+  // time changes — device, pix fmt. Volume/mute are applied live via
+  // IPC and don't need a restart. Waits for the device list: starting
+  // before it loads would launch without the audio sibling.
+  useEffect(() => {
+    if (!devicePath) return;
+    start({
+      video_device: devicePath,
       audio_device: audioCapture ?? "",
       pix_fmt: settings.pix_fmt!,
       volume: settings.volume,
       muted: settings.muted,
-    }),
-    [settings, audioCapture],
-  );
-
-  // Restart the stream whenever any setting that mpv consumes at start
-  // time changes — device, pix fmt. Volume/mute are applied live via
-  // IPC and don't need a restart.
-  useEffect(() => {
-    start(cfg);
+    });
     return () => {
       stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.video_device, audioCapture, settings.pix_fmt]);
+  }, [devicePath, audioCapture, settings.pix_fmt]);
 
   useEffect(() => {
     ipcSetVolume(settings.volume).catch(() => {});
@@ -167,11 +176,15 @@ export function ViewerScreen({
 
   return (
     <div className="h-full flex flex-col relative">
-      {error && (
+      {(error || deviceMissing) && (
         <div className="mx-4 mt-3 mb-2 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-warn flex items-start gap-2 z-10">
           <Warning size={16} weight="regular" color="url(#miraIconWarn)" className="mt-0.5 shrink-0" />
           <div className="flex-1">
-            <div className="font-mono leading-snug">{error}</div>
+            <div className="font-mono leading-snug">
+              {deviceMissing
+                ? `Capture device ${settings.video_device ?? "(none)"} is not connected. Pick one in settings.`
+                : error}
+            </div>
             <button className="underline mt-1 hover:text-warn/80" onClick={onResetToStartup}>
               Open settings
             </button>
@@ -188,7 +201,9 @@ export function ViewerScreen({
         className="flex-1 min-h-0 bg-black ml-4 mr-4 rounded-lg overflow-hidden relative transition-[margin] duration-250">
         {status !== "running" && (
           <div className="absolute inset-0 grid place-items-center text-xs text-zinc-600 pointer-events-none">
-            {status === "starting"
+            {deviceMissing
+              ? "No capture device"
+              : status === "starting"
               ? "Connecting to capture device…"
               : status === "error"
               ? "Stream stopped"

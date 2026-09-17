@@ -5,7 +5,12 @@ pub mod pulse;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VideoDevice {
+    /// Path to open and persist: the stable `/dev/v4l/by-id/...` link
+    /// when udev provides one, otherwise the raw node.
     pub path: String,
+    /// Raw `/dev/videoN` node. Lets settings saved before stable paths
+    /// existed still resolve to a device.
+    pub node: String,
     pub name: String,
     pub formats: Vec<PixFormat>,
     /// Auto-derived alsa capture identifier (e.g. "hw:4,0") for the

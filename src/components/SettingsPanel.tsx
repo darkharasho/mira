@@ -3,7 +3,7 @@ import { check as checkForUpdate } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { getVersion } from "@tauri-apps/api/app";
 import { DevicePicker } from "./DevicePicker";
-import type { DeviceList, Settings } from "../lib/types";
+import { findVideoDevice, type DeviceList, type Settings } from "../lib/types";
 
 type UpdateStatus =
   | { kind: "idle" }
@@ -73,7 +73,7 @@ export function SettingsPanel({
     }
   };
 
-  const selectedVideo = devices.video.find((d) => d.path === settings.video_device);
+  const selectedVideo = findVideoDevice(devices.video, settings.video_device);
 
   return (
     <>
@@ -92,9 +92,9 @@ export function SettingsPanel({
         <div className="space-y-4">
           <DevicePicker
             label="Video device"
-            value={settings.video_device}
+            value={selectedVideo?.path ?? null}
             onChange={(v) => onChange({ video_device: v })}
-            options={devices.video.map((d) => ({ value: d.path, label: `${d.name} (${d.path})` }))}
+            options={devices.video.map((d) => ({ value: d.path, label: `${d.name} (${d.node})` }))}
           />
           <DevicePicker
             label="Pixel format"

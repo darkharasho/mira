@@ -37,13 +37,30 @@ pub fn enumerate() -> Vec<VideoDevice> {
             .collect();
         let audio_capture = audio_sibling_for(&path);
         out.push(VideoDevice {
-            path,
+            path: stable_path_for(&path).unwrap_or_else(|| path.clone()),
+            node: path,
             name: caps.card,
             formats,
             audio_capture,
         });
     }
     out
+}
+
+/// `/dev/videoN` numbering follows probe order, so it shifts whenever
+/// another camera enumerates first. Prefer the udev `/dev/v4l/by-id`
+/// symlink (vendor + product + serial) so a saved selection keeps
+/// pointing at the same physical device. None for devices without one,
+/// e.g. v4l2loopback.
+fn stable_path_for(node: &str) -> Option<String> {
+    let target = std::fs::canonicalize(node).ok()?;
+    let mut links: Vec<PathBuf> = std::fs::read_dir("/dev/v4l/by-id")
+        .ok()?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| std::fs::canonicalize(p).ok().as_ref() == Some(&target))
+        .collect();
+    links.sort();
+    links.into_iter().next().map(|p| p.to_string_lossy().into_owned())
 }
 
 /// Resolve the alsa hw identifier of the audio interface that sits on

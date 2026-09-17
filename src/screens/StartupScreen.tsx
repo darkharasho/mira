@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useDevices } from "../hooks/useDevices";
 import { DevicePicker } from "../components/DevicePicker";
-import type { Settings } from "../lib/types";
+import { findVideoDevice, type Settings } from "../lib/types";
 
 export function StartupScreen({
   initial,
@@ -16,14 +16,22 @@ export function StartupScreen({
   const [skip, setSkip] = useState(initial.skip_startup);
 
   const selectedVideo = useMemo(
-    () => devices.video.find((d) => d.path === video),
+    () => findVideoDevice(devices.video, video),
     [devices.video, video],
   );
 
   useEffect(() => {
     if (loading) return;
-    if (!video && devices.video[0]) setVideo(devices.video[0].path);
-  }, [loading, devices, video]);
+    if (selectedVideo) {
+      // Normalize a legacy /dev/videoN selection to its stable path.
+      if (selectedVideo.path !== video) setVideo(selectedVideo.path);
+      return;
+    }
+    // Nothing saved, or the saved device is gone. Prefer a device with
+    // an audio sibling — that's a capture card rather than a bare webcam.
+    const fallback = devices.video.find((d) => d.audio_capture) ?? devices.video[0];
+    if (fallback) setVideo(fallback.path);
+  }, [loading, devices, video, selectedVideo]);
 
   useEffect(() => {
     if (!selectedVideo) return;
@@ -67,7 +75,7 @@ export function StartupScreen({
           label="Video device"
           value={video}
           onChange={setVideo}
-          options={devices.video.map((d) => ({ value: d.path, label: `${d.name} (${d.path})` }))}
+          options={devices.video.map((d) => ({ value: d.path, label: `${d.name} (${d.node})` }))}
           disabled={loading}
         />
         <DevicePicker

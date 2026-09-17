@@ -1,6 +1,7 @@
 export interface PixFormat { fourcc: string; label: string; }
 export interface VideoDevice {
   path: string;
+  node: string;
   name: string;
   formats: PixFormat[];
   audio_capture: string | null;
@@ -28,4 +29,12 @@ export interface Settings {
   show_stats: boolean;
   skip_startup: boolean;
   display_resolution: DisplayResolution;
+}
+
+/// Match a saved `video_device` against the enumerated list. Accepts the
+/// stable by-id path or, for settings saved by older versions, the raw
+/// `/dev/videoN` node.
+export function findVideoDevice(list: VideoDevice[], saved: string | null): VideoDevice | undefined {
+  if (!saved) return undefined;
+  return list.find((d) => d.path === saved) ?? list.find((d) => d.node === saved);
 }
