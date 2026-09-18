@@ -1,4 +1,5 @@
-export interface PixFormat { fourcc: string; label: string; }
+export interface CaptureMode { width: number; height: number; fps: number; }
+export interface PixFormat { fourcc: string; label: string; modes: CaptureMode[]; }
 export interface VideoDevice {
   path: string;
   node: string;
@@ -13,6 +14,9 @@ export interface StreamConfig {
   video_device: string;
   audio_device: string;
   pix_fmt: string;
+  width: number;
+  height: number;
+  fps: number;
   volume: number;
   muted: boolean;
 }
@@ -29,6 +33,21 @@ export interface Settings {
   show_stats: boolean;
   skip_startup: boolean;
   display_resolution: DisplayResolution;
+  /// "WIDTHxHEIGHT@FPS", or null for the device's best advertised mode.
+  capture_mode: string | null;
+}
+
+/// Serialize a capture mode the way settings store it.
+export function formatCaptureMode(m: CaptureMode): string {
+  return `${m.width}x${m.height}@${Math.round(m.fps)}`;
+}
+
+/// Parse a stored capture mode back into dimensions. Returns zeros for
+/// null/garbage, which the backend reads as "resolve the best mode".
+export function parseCaptureMode(s: string | null): CaptureMode {
+  const m = /^(\d+)x(\d+)@([\d.]+)$/.exec(s ?? "");
+  if (!m) return { width: 0, height: 0, fps: 0 };
+  return { width: Number(m[1]), height: Number(m[2]), fps: Number(m[3]) };
 }
 
 /// Match a saved `video_device` against the enumerated list. Accepts the

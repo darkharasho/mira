@@ -10,6 +10,17 @@ pub struct StreamConfig {
     /// already wrapped to the low-latency dsnoop PCM if available.
     pub audio_device: String,
     pub pix_fmt: String,
+    /// Capture resolution to request from the device. `None` (or a zero
+    /// dimension) means "pick the device's best advertised mode" —
+    /// without an explicit size the v4l2 demuxer inherits whatever the
+    /// node was last left in, typically 640x480.
+    #[serde(default)]
+    pub width: u32,
+    #[serde(default)]
+    pub height: u32,
+    /// Frame rate to request; 0 leaves it to the driver.
+    #[serde(default)]
+    pub fps: f64,
     pub volume: u8,
     pub muted: bool,
 }

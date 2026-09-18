@@ -205,6 +205,23 @@ fn alsa_lowlatency_pcm(audio_device: &str) -> String {
     }
 }
 
+/// Build the `--demuxer-lavf-o` value for one stream. The v4l2 demuxer
+/// needs `video_size` (and ideally `framerate`) spelled out: given only
+/// a pixel format it keeps whatever mode the device node currently
+/// holds, which after a cold plug is the UVC default of 640x480.
+fn demuxer_opts(cfg: &StreamConfig, mode: &Option<crate::devices::CaptureMode>) -> String {
+    let mut opts = vec![format!("pixel_format={}", cfg.pix_fmt)];
+    if let Some(m) = mode {
+        if m.width > 0 && m.height > 0 {
+            opts.push(format!("video_size={}x{}", m.width, m.height));
+        }
+        if m.fps > 0.0 {
+            opts.push(format!("framerate={}", m.fps));
+        }
+    }
+    opts.join(",")
+}
+
 impl CaptureBackend for MpvBackend {
     fn start(&self, cfg: &StreamConfig) -> Result<(), CaptureError> {
         let mut guard = self.inner.lock().unwrap();
@@ -222,6 +239,25 @@ impl CaptureBackend for MpvBackend {
         if cfg.pix_fmt.is_empty() {
             return Err(CaptureError::Other("pix_fmt is empty".into()));
         }
+
+        // Without an explicit video_size the v4l2 demuxer just adopts
+        // the node's current format — 640x480 on a freshly enumerated
+        // UVC card, which a 16:9 source gets squeezed into. Resolve the
+        // device's best advertised mode when the caller didn't pick one.
+        let resolved_mode = if cfg.width > 0 && cfg.height > 0 {
+            Some(crate::devices::CaptureMode {
+                width: cfg.width,
+                height: cfg.height,
+                fps: cfg.fps,
+            })
+        } else {
+            let mode = crate::devices::v4l2::best_mode(
+                &video_node.to_string_lossy(),
+                &cfg.pix_fmt,
+            );
+            tracing::info!(?mode, "no capture mode configured; using device best");
+            mode
+        };
 
         let socket_path = fresh_socket_path();
         let _ = std::fs::remove_file(&socket_path);
@@ -342,7 +378,7 @@ impl CaptureBackend for MpvBackend {
             // entirely. 50ms is enough to absorb jitter on the pipewire
             // path while keeping lip sync tight for game capture.
             .arg("--audio-buffer=0.05")
-            .arg(format!("--demuxer-lavf-o=pixel_format={}", cfg.pix_fmt))
+            .arg(format!("--demuxer-lavf-o={}", demuxer_opts(cfg, &resolved_mode)))
             .arg("--demuxer-lavf-probesize=32")
             .arg("--demuxer-lavf-analyzeduration=0")
             .arg(format!("--volume={}", cfg.volume))
@@ -521,5 +557,47 @@ impl CaptureBackend for MpvBackend {
             pix_fmt,
             frame_drops,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::devices::CaptureMode;
+
+    fn cfg() -> StreamConfig {
+        StreamConfig {
+            video_device: "/dev/video0".into(),
+            audio_device: String::new(),
+            pix_fmt: "yuyv422".into(),
+            width: 0,
+            height: 0,
+            fps: 0.0,
+            volume: 100,
+            muted: false,
+        }
+    }
+
+    #[test]
+    fn demuxer_opts_pin_size_and_rate() {
+        let mode = Some(CaptureMode { width: 1920, height: 1080, fps: 60.0 });
+        assert_eq!(
+            demuxer_opts(&cfg(), &mode),
+            "pixel_format=yuyv422,video_size=1920x1080,framerate=60"
+        );
+    }
+
+    #[test]
+    fn demuxer_opts_omit_unknown_rate() {
+        let mode = Some(CaptureMode { width: 1280, height: 720, fps: 0.0 });
+        assert_eq!(
+            demuxer_opts(&cfg(), &mode),
+            "pixel_format=yuyv422,video_size=1280x720"
+        );
+    }
+
+    #[test]
+    fn demuxer_opts_without_mode_is_format_only() {
+        assert_eq!(demuxer_opts(&cfg(), &None), "pixel_format=yuyv422");
     }
 }

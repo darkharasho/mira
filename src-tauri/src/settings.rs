@@ -10,6 +10,11 @@ pub struct Settings {
     pub skip_startup: bool,
     #[serde(default = "default_display_resolution")]
     pub display_resolution: String,
+    /// Capture mode to request from the device, as "WIDTHxHEIGHT@FPS"
+    /// (e.g. "1920x1080@60"). None means "use the device's best
+    /// advertised mode", resolved at stream start.
+    #[serde(default)]
+    pub capture_mode: Option<String>,
 }
 
 fn default_display_resolution() -> String {
@@ -26,6 +31,7 @@ impl Default for Settings {
             show_stats: true,
             skip_startup: true,
             display_resolution: default_display_resolution(),
+            capture_mode: None,
         }
     }
 }
@@ -44,6 +50,7 @@ mod tests {
             show_stats: false,
             skip_startup: true,
             display_resolution: "1440p".into(),
+            capture_mode: Some("1920x1080@60".into()),
         };
         let json = serde_json::to_string(&s).unwrap();
         let back: Settings = serde_json::from_str(&json).unwrap();

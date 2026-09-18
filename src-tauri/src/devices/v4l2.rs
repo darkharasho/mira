@@ -5,11 +5,13 @@
 //! backend uses that id directly so audio always tracks the chosen
 //! video device — no separate dropdown needed.
 
-use super::{PixFormat, VideoDevice, fourcc_to_mpv_label};
+use super::{CaptureMode, PixFormat, VideoDevice, fourcc_to_mpv_label, sort_modes};
 use std::path::{Path, PathBuf};
 use v4l::context;
+use v4l::frameinterval::FrameIntervalEnum;
 use v4l::video::Capture;
 use v4l::Device;
+use v4l::FourCC;
 
 pub fn enumerate() -> Vec<VideoDevice> {
     let mut out = Vec::new();
@@ -31,6 +33,7 @@ pub fn enumerate() -> Vec<VideoDevice> {
                 let fourcc = f.fourcc.str().unwrap_or("????").to_string();
                 PixFormat {
                     label: fourcc_to_mpv_label(&fourcc),
+                    modes: modes_for(&dev, f.fourcc),
                     fourcc,
                 }
             })
@@ -45,6 +48,68 @@ pub fn enumerate() -> Vec<VideoDevice> {
         });
     }
     out
+}
+
+/// Every (size, rate) combination the device advertises for one pixel
+/// format, best first. Stepwise/continuous ranges are expanded to their
+/// discrete corners — capture cards report discrete sizes, webcams may
+/// not, and we only need something concrete to hand the demuxer.
+fn modes_for(dev: &Device, fourcc: FourCC) -> Vec<CaptureMode> {
+    let mut modes = Vec::new();
+    for frame_size in dev.enum_framesizes(fourcc).unwrap_or_default() {
+        for discrete in frame_size.size.to_discrete() {
+            let (w, h) = (discrete.width, discrete.height);
+            for fps in rates_for(dev, fourcc, w, h) {
+                modes.push(CaptureMode { width: w, height: h, fps });
+            }
+        }
+    }
+    sort_modes(&mut modes);
+    modes.dedup();
+    modes
+}
+
+/// Frame rates for one (format, size). v4l2 reports *intervals*, so fps
+/// is the reciprocal. Stepwise ranges collapse to their fastest rate —
+/// the shortest interval.
+fn rates_for(dev: &Device, fourcc: FourCC, w: u32, h: u32) -> Vec<f64> {
+    let mut rates: Vec<f64> = dev
+        .enum_frameintervals(fourcc, w, h)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|iv| match iv.interval {
+            FrameIntervalEnum::Discrete(f) => fps_from(f),
+            FrameIntervalEnum::Stepwise(s) => fps_from(s.min),
+        })
+        .collect();
+    rates.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+    rates.dedup();
+    // A device that refuses VIDIOC_ENUM_FRAMEINTERVALS still needs a
+    // usable mode entry; leave the rate unset (0) and let the driver
+    // pick when we build the demuxer options.
+    if rates.is_empty() { vec![0.0] } else { rates }
+}
+
+fn fps_from(f: v4l::Fraction) -> Option<f64> {
+    if f.numerator == 0 {
+        return None;
+    }
+    Some(f.denominator as f64 / f.numerator as f64)
+}
+
+/// Best mode for a device+format, used when no explicit capture mode is
+/// configured. `None` when the device can't be opened or advertises
+/// nothing for that format — the caller then leaves the demuxer alone.
+pub fn best_mode(node: &str, mpv_pix_fmt: &str) -> Option<CaptureMode> {
+    let dev = Device::with_path(node).ok()?;
+    let formats = dev.enum_formats().ok()?;
+    let fourcc = formats.into_iter().find(|f| {
+        f.fourcc
+            .str()
+            .map(|s| fourcc_to_mpv_label(s) == mpv_pix_fmt)
+            .unwrap_or(false)
+    })?;
+    modes_for(&dev, fourcc.fourcc).into_iter().next()
 }
 
 /// `/dev/videoN` numbering follows probe order, so it shifts whenever
@@ -106,4 +171,21 @@ fn usb_root(p: &Path) -> Option<PathBuf> {
         cur = cur.parent()?.to_path_buf();
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Hardware probe: `MIRA_TEST_DEVICE=/dev/video3 cargo test -- --ignored`.
+    /// Enumeration ioctls don't need exclusive access, so this is safe to
+    /// run while a stream is live.
+    #[test]
+    #[ignore]
+    fn reports_device_best_mode() {
+        let node = std::env::var("MIRA_TEST_DEVICE").expect("set MIRA_TEST_DEVICE");
+        let mode = best_mode(&node, "yuyv422");
+        println!("best yuyv422 mode for {node}: {mode:?}");
+        assert!(mode.is_some());
+    }
 }

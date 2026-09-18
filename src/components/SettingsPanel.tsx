@@ -3,7 +3,11 @@ import { check as checkForUpdate } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { getVersion } from "@tauri-apps/api/app";
 import { DevicePicker } from "./DevicePicker";
-import { findVideoDevice, type DeviceList, type Settings } from "../lib/types";
+import { findVideoDevice, formatCaptureMode, type DeviceList, type Settings } from "../lib/types";
+
+/// Sentinel for the "let the backend pick" capture-mode choice. Can't
+/// be "" — DevicePicker already uses that for its disabled placeholder.
+const AUTO_MODE = "auto";
 
 type UpdateStatus =
   | { kind: "idle" }
@@ -74,6 +78,10 @@ export function SettingsPanel({
   };
 
   const selectedVideo = findVideoDevice(devices.video, settings.video_device);
+  // Capture modes belong to a (device, pixel format) pair — the same
+  // card often tops out lower in an uncompressed format than in MJPEG.
+  const captureModes =
+    selectedVideo?.formats.find((f) => f.label === settings.pix_fmt)?.modes ?? [];
 
   return (
     <>
@@ -101,6 +109,18 @@ export function SettingsPanel({
             value={settings.pix_fmt}
             onChange={(v) => onChange({ pix_fmt: v })}
             options={(selectedVideo?.formats ?? []).map((f) => ({ value: f.label, label: f.label }))}
+          />
+          <DevicePicker
+            label="Capture resolution"
+            value={settings.capture_mode ?? AUTO_MODE}
+            onChange={(v) => onChange({ capture_mode: v === AUTO_MODE ? null : v })}
+            options={[
+              { value: AUTO_MODE, label: "Auto (device best)" },
+              ...captureModes.map((m) => ({
+                value: formatCaptureMode(m),
+                label: `${m.width}×${m.height} @ ${Math.round(m.fps)}fps`,
+              })),
+            ]}
           />
           <DevicePicker
             label="Display resolution"

@@ -21,7 +21,7 @@ import {
   SpeakerSlash,
   Warning,
 } from "@phosphor-icons/react";
-import { findVideoDevice, type Settings } from "../lib/types";
+import { findVideoDevice, parseCaptureMode, type Settings } from "../lib/types";
 
 /// Single-window viewer. The mpv X11 child window is reparented into our
 /// Tauri toplevel and sized to the `videoSlotRef` rectangle — i.e. the
@@ -110,10 +110,14 @@ export function ViewerScreen({
   // before it loads would launch without the audio sibling.
   useEffect(() => {
     if (!devicePath) return;
+    const mode = parseCaptureMode(settings.capture_mode);
     start({
       video_device: devicePath,
       audio_device: audioCapture ?? "",
       pix_fmt: settings.pix_fmt!,
+      width: mode.width,
+      height: mode.height,
+      fps: mode.fps,
       volume: settings.volume,
       muted: settings.muted,
     });
@@ -121,7 +125,7 @@ export function ViewerScreen({
       stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [devicePath, audioCapture, settings.pix_fmt]);
+  }, [devicePath, audioCapture, settings.pix_fmt, settings.capture_mode]);
 
   useEffect(() => {
     ipcSetVolume(settings.volume).catch(() => {});
