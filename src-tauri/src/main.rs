@@ -103,12 +103,10 @@ fn main() {
             let overlay_for_main = overlay.clone();
             let settle = Arc::new(std::sync::atomic::AtomicU64::new(0));
             main_win.on_window_event(move |event| match event {
-                WindowEvent::Moved(p) => {
-                    let _ = overlay_for_main.set_position(*p);
+                WindowEvent::Moved(_) => {
                     settle_overlay(&overlay_for_main, &settle);
                 }
                 WindowEvent::Resized(s) => {
-                    let _ = overlay_for_main.set_size(*s);
                     settle_overlay(&overlay_for_main, &settle);
                     backend_for_events.set_region(s.width, s.height, 0, 0);
                     shape::sync(overlay_for_main.app_handle());
@@ -155,12 +153,14 @@ fn main() {
 }
 
 /// Following main is a round trip through the window manager per move,
-/// so a fast drag can leave the overlay trailing — or parked in the wrong
-/// place if moves arrive out of order. Once main has been still for a
-/// moment, snap the overlay to main's actual geometry.
+/// so tracking it live leaves the overlay visibly trailing a fast drag.
+/// Instead the overlay goes invisible as soon as main starts moving or
+/// resizing, and once main has been still for a moment it snaps to
+/// main's geometry and reappears.
 fn settle_overlay(overlay: &tauri::WebviewWindow, generation: &Arc<std::sync::atomic::AtomicU64>) {
     use std::sync::atomic::Ordering;
     let mine = generation.fetch_add(1, Ordering::SeqCst) + 1;
+    overlay.app_handle().state::<shape::Shape>().set_visible(overlay, false);
     let overlay = overlay.clone();
     let generation = generation.clone();
     std::thread::spawn(move || {
@@ -168,10 +168,17 @@ fn settle_overlay(overlay: &tauri::WebviewWindow, generation: &Arc<std::sync::at
         if generation.load(Ordering::SeqCst) != mine {
             return;
         }
-        let Some(main) = overlay.app_handle().get_webview_window("main") else { return };
-        if let (Ok(pos), Ok(size)) = (main.inner_position(), main.inner_size()) {
-            let _ = overlay.set_position(pos);
-            let _ = overlay.set_size(size);
+        if let Some(main) = overlay.app_handle().get_webview_window("main") {
+            if let (Ok(pos), Ok(size)) = (main.inner_position(), main.inner_size()) {
+                let _ = overlay.set_position(pos);
+                let _ = overlay.set_size(size);
+            }
+        }
+        // Let the move land before revealing, or the first frame shows
+        // the overlay at its old spot.
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        if generation.load(Ordering::SeqCst) == mine {
+            overlay.app_handle().state::<shape::Shape>().set_visible(&overlay, true);
         }
     });
 }
