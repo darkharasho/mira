@@ -1,6 +1,6 @@
 [package]
 name = "mira"
-version = "0.2.0"
+version = "0.2.1"
 description = "Mira — low-latency capture-card viewer for Linux"
 authors = ["darkharasho"]
 license = ""
