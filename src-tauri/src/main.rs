@@ -57,6 +57,7 @@ fn main() {
             commands::take_screenshot,
             commands::default_settings,
             commands::set_blur_region,
+            commands::refresh_overlay,
         ])
         .setup(move |app| {
             crate::hotplug::spawn(app.handle().clone());
@@ -183,6 +184,17 @@ fn settle_overlay(overlay: &tauri::WebviewWindow, generation: &Arc<std::sync::at
             overlay.app_handle().state::<shape::Shape>().set_visible(&overlay, true);
         }
     });
+}
+
+/// WebKitGTK before 2.52 (the AppImage bundles Ubuntu's 2.50) doesn't
+/// clear the parts of a transparent page that turn transparent: a closed
+/// panel or faded dock stays on screen until the view gets fresh buffers.
+pub(crate) fn webkit_leaves_stale_pixels() -> bool {
+    extern "C" {
+        fn webkit_get_major_version() -> u32;
+        fn webkit_get_minor_version() -> u32;
+    }
+    unsafe { (webkit_get_major_version(), webkit_get_minor_version()) < (2, 52) }
 }
 
 pub(crate) fn x11_window_id(win: &tauri::WebviewWindow) -> Option<u64> {

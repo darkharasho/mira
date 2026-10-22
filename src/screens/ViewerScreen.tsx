@@ -5,6 +5,7 @@ import { useDevices } from "../hooks/useDevices";
 import { useStats } from "../hooks/useStats";
 import { useAutoHide } from "../hooks/useAutoHide";
 import { useBlurRegion } from "../hooks/useBlurRegion";
+import { useStalePixelRefresh } from "../hooks/useStalePixelRefresh";
 import { SettingsPanel } from "../components/SettingsPanel";
 import { WindowFrame } from "../components/WindowFrame";
 import { WindowControls } from "../components/WindowControls";
@@ -150,6 +151,7 @@ export function ViewerScreen({
   const shown = useAutoHide(2500, panelOpen || hoveringChrome || !live || deviceMissing);
   const glass = shown ? "on" : "off";
   useBlurRegion();
+  useStalePixelRefresh();
 
   const hover = {
     onMouseEnter: () => setHoveringChrome(true),

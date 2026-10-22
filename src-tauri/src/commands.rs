@@ -77,3 +77,20 @@ pub fn set_blur_region(
 ) {
     blur.set_region(&window, &rects);
 }
+
+/// Work around old WebKitGTKs leaving stale pixels behind on the
+/// transparent overlay (see `webkit_leaves_stale_pixels`): a 1px resize
+/// and back hands WebKit fresh buffers, which it repaints in full.
+#[tauri::command]
+pub fn refresh_overlay(window: tauri::WebviewWindow) {
+    if !crate::webkit_leaves_stale_pixels() {
+        return;
+    }
+    let Ok(size) = window.inner_size() else { return };
+    let _ = window.set_size(tauri::PhysicalSize::new(size.width, size.height + 1));
+    // Back-to-back resizes coalesce into nothing; let the first land.
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let _ = window.set_size(size);
+    });
+}

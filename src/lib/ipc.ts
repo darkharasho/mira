@@ -15,5 +15,7 @@ export type BlurRect = { x: number; y: number; w: number; h: number; r: number }
 export const setBlurRegion = (rects: BlurRect[]) =>
   invoke<void>("set_blur_region", { rects });
 
+export const refreshOverlay = () => invoke<void>("refresh_overlay");
+
 export const onDevicesChanged = (cb: () => void) =>
   listen("devices-changed", () => cb());
