@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { check as checkForUpdate } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { getVersion } from "@tauri-apps/api/app";
@@ -45,6 +45,7 @@ export function SettingsPanel({
 
   const [appVersion, setAppVersion] = useState<string>("");
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ kind: "idle" });
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     getVersion().then(setAppVersion).catch(() => {});
@@ -106,7 +107,17 @@ export function SettingsPanel({
             </svg>
           </button>
         </header>
-        <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-5">
+        {/* Scrolled by hand rather than overflow-y-auto: WebKit gives a
+            native scroller its own composited layer, and on the
+            transparent overlay that layer never clears — scrolling and
+            closing the sheet leave stale copies behind. */}
+        <div
+          ref={scrollRef}
+          onWheel={(e) => {
+            if (scrollRef.current) scrollRef.current.scrollTop += e.deltaY;
+          }}
+          className="flex-1 min-h-0 overflow-hidden px-5 pb-5"
+        >
         <div className="space-y-4">
           <DevicePicker
             label="Video device"

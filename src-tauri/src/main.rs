@@ -103,10 +103,12 @@ fn main() {
             let overlay_for_main = overlay.clone();
             let settle = Arc::new(std::sync::atomic::AtomicU64::new(0));
             main_win.on_window_event(move |event| match event {
-                WindowEvent::Moved(_) => {
+                WindowEvent::Moved(p) => {
+                    let _ = overlay_for_main.set_position(*p);
                     settle_overlay(&overlay_for_main, &settle);
                 }
                 WindowEvent::Resized(s) => {
+                    let _ = overlay_for_main.set_size(*s);
                     settle_overlay(&overlay_for_main, &settle);
                     backend_for_events.set_region(s.width, s.height, 0, 0);
                     shape::sync(overlay_for_main.app_handle());
@@ -154,9 +156,9 @@ fn main() {
 
 /// Following main is a round trip through the window manager per move,
 /// so tracking it live leaves the overlay visibly trailing a fast drag.
-/// Instead the overlay goes invisible as soon as main starts moving or
-/// resizing, and once main has been still for a moment it snaps to
-/// main's geometry and reappears.
+/// The overlay still follows, but invisibly: it goes transparent as soon
+/// as main starts moving or resizing, and once main has been still for a
+/// moment it snaps to main's actual geometry and reappears.
 fn settle_overlay(overlay: &tauri::WebviewWindow, generation: &Arc<std::sync::atomic::AtomicU64>) {
     use std::sync::atomic::Ordering;
     let mine = generation.fetch_add(1, Ordering::SeqCst) + 1;
