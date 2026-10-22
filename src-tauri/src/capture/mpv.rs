@@ -53,21 +53,12 @@ impl MpvBackend {
         }
     }
 
-    /// Update the video region inside the parent window. The child X11
-    /// window we own gets resized/repositioned; mpv (embedded inside
-    /// it) follows automatically.
+    /// Update the video region inside the parent window (physical
+    /// pixels). The child X11 window we own gets resized/repositioned;
+    /// mpv (embedded inside it) follows automatically.
     pub fn set_region(&self, w: u32, h: u32, x: i32, y: i32) {
         if let Some(child) = self.child.lock().unwrap().as_ref() {
             child.set_geometry(w, h, x, y);
-        }
-    }
-
-    /// Show or hide the embedded video by mapping/unmapping the child
-    /// X11 window. mpv keeps decoding behind the scenes; this just
-    /// stops it from drawing on top of our webview content.
-    pub fn set_video_visible(&self, visible: bool) {
-        if let Some(child) = self.child.lock().unwrap().as_ref() {
-            child.set_mapped(visible);
         }
     }
 

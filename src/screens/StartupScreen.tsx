@@ -44,18 +44,17 @@ export function StartupScreen({
   const ready = !!video && !!pixFmt;
 
   return (
-    <div className="h-full flex flex-col p-5">
-      <header className="flex items-center justify-between mb-5">
-        <div className="flex items-center gap-2.5">
-          <div className="w-2 h-2 rounded-full bg-accent shadow-[0_0_8px_#5cf08a]" />
-          <h1 className="text-sm font-semibold tracking-tight">Mira</h1>
+    <div data-no-drag className="glass-solid w-[400px] max-w-full rounded-3xl p-6 flex flex-col select-text">
+      <header className="flex items-center justify-between mb-4">
+        <div>
+          <h1 className="text-base font-semibold tracking-tight">Connect a capture source</h1>
         </div>
         <button
           onClick={refresh}
           disabled={loading}
           title="Refresh devices"
-          className="text-zinc-500 hover:text-zinc-200 transition-colors disabled:opacity-30
-                     w-7 h-7 grid place-items-center rounded-md hover:bg-white/5"
+          className="text-zinc-400 hover:text-zinc-100 transition-colors disabled:opacity-30
+                     w-8 h-8 grid place-items-center rounded-full hover:bg-white/10"
         >
           <svg viewBox="0 0 16 16" className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} fill="none">
             <path
@@ -66,9 +65,9 @@ export function StartupScreen({
         </button>
       </header>
 
-      <div className="flex-1 flex flex-col gap-3.5">
-        <p className="text-xs text-zinc-400 leading-relaxed">
-          Pick your capture source. The video preview opens in its own window when you click Start.
+      <div className="flex flex-col gap-4">
+        <p className="text-xs text-zinc-400 leading-relaxed -mt-2">
+          The video fills this window once capture starts. Move the mouse to bring the controls back.
         </p>
 
         <DevicePicker
@@ -98,7 +97,7 @@ export function StartupScreen({
       </div>
 
       <button
-        className="mt-4 w-full rounded-lg bg-accent text-zinc-950 font-medium py-2.5 text-sm
+        className="mt-6 w-full rounded-xl bg-accent text-zinc-950 font-semibold py-2.5 text-sm
                    hover:bg-accent/90 disabled:bg-zinc-800 disabled:text-zinc-600 disabled:cursor-not-allowed
                    transition-colors shadow-[0_0_24px_-6px_#5cf08a]"
         disabled={!ready}

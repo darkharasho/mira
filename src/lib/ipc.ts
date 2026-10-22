@@ -11,11 +11,9 @@ export const getStats = () => invoke<StreamStats>("get_stats");
 export const takeScreenshot = () => invoke<string>("take_screenshot");
 export const defaultSettings = () => invoke<Settings>("default_settings");
 
-export const setVideoRegion = (w: number, h: number, x: number, y: number) =>
-  invoke<void>("set_video_region", { w, h, x, y });
-
-export const setVideoVisible = (visible: boolean) =>
-  invoke<void>("set_video_visible", { visible });
+export type BlurRect = { x: number; y: number; w: number; h: number; r: number };
+export const setBlurRegion = (rects: BlurRect[]) =>
+  invoke<void>("set_blur_region", { rects });
 
 export const onDevicesChanged = (cb: () => void) =>
   listen("devices-changed", () => cb());

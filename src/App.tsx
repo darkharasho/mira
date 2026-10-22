@@ -1,19 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { useSettings } from "./hooks/useSettings";
 import { StartupScreen } from "./screens/StartupScreen";
 import { ViewerScreen } from "./screens/ViewerScreen";
-import { Titlebar } from "./components/Titlebar";
+import { WindowFrame } from "./components/WindowFrame";
+import { WindowControls } from "./components/WindowControls";
+import { MiraMark } from "./components/MiraMark";
+import { mainWindow, withMain } from "./lib/mainWindow";
 import type { DisplayResolution, Settings } from "./lib/types";
 
-// Custom titlebar (h-9) + bottom control pill (h-20) = 116px of vertical
-// chrome. Side video margins (mx-4 + mx-4) = 32px of horizontal chrome.
-// The window size targets a video rectangle of EXACTLY the chosen res.
+// The video fills the whole window, so the window size IS the video size.
 const VIDEO_TO_WINDOW: Record<DisplayResolution, [number, number]> = {
-  "720p": [1280 + 32, 720 + 36 + 80],
-  "1080p": [1920 + 32, 1080 + 36 + 80],
-  "1440p": [2560 + 32, 1440 + 36 + 80],
+  "720p": [1280, 720],
+  "1080p": [1920, 1080],
+  "1440p": [2560, 1440],
 };
 
 export default function App() {
@@ -37,7 +37,7 @@ export default function App() {
   );
 
   const toggleFullscreen = useCallback(async () => {
-    const win = getCurrentWindow();
+    const win = await mainWindow();
     const next = !(await win.isFullscreen());
     await win.setFullscreen(next);
     setFullscreen(next);
@@ -51,44 +51,41 @@ export default function App() {
     if (!res) return;
     const dims = VIDEO_TO_WINDOW[res];
     if (!dims) return;
-    getCurrentWindow().setSize(new LogicalSize(dims[0], dims[1])).catch(() => {});
+    withMain((w) => w.setSize(new LogicalSize(dims[0], dims[1])));
   }, [settings?.display_resolution, fullscreen]);
 
+  if (settings && !showStartup) {
+    return (
+      <ViewerScreen
+        settings={settings}
+        onChangeSettings={update}
+        onResetToStartup={() => setForceStartup(true)}
+        fullscreen={fullscreen}
+        onToggleFullscreen={toggleFullscreen}
+      />
+    );
+  }
+
+  // Startup / loading: an opaque surface over main's black backdrop.
   return (
-    <div className="h-full flex flex-col">
-      {/* Document-scoped <defs> referenced by url(#…) on Phosphor icons.
-          One subtle off-white → faint-mint gradient that gives the chrome
-          a quiet brand tint without screaming "gradient icons". */}
-      <svg width="0" height="0" className="absolute pointer-events-none" aria-hidden>
-        <defs>
-          <linearGradient id="miraIconStroke" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#f4f4f5" />
-            <stop offset="1" stopColor="#a8f0bf" />
-          </linearGradient>
-          <linearGradient id="miraIconWarn" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#fde7c2" />
-            <stop offset="1" stopColor="#f0b35c" />
-          </linearGradient>
-        </defs>
-      </svg>
-      {!fullscreen && <Titlebar />}
-      <main className="flex-1 min-h-0 relative overflow-hidden">
+    <WindowFrame
+      resizable={!fullscreen}
+      style={{ background: "radial-gradient(ellipse at 50% 0%, #1a1d2b 0%, #0a0c14 55%, #05060a 100%)" }}
+    >
+      <div className="absolute top-3 left-3 flex items-center gap-2 h-9 px-2 pointer-events-none">
+        <MiraMark className="w-4 h-4" />
+        <span className="text-xs font-semibold tracking-tight text-zinc-200">Mira</span>
+      </div>
+      <div className="absolute top-3 right-3">
+        <WindowControls glass="off" />
+      </div>
+      <div className="h-full grid place-items-center p-6">
         {!settings ? (
-          <div className="grid place-items-center h-full text-zinc-500 text-sm">
-            Loading…
-          </div>
-        ) : showStartup ? (
-          <StartupScreen initial={settings} onStart={onStart} />
+          <div className="text-zinc-500 text-sm">Loading…</div>
         ) : (
-          <ViewerScreen
-            settings={settings}
-            onChangeSettings={update}
-            onResetToStartup={() => setForceStartup(true)}
-            fullscreen={fullscreen}
-            onToggleFullscreen={toggleFullscreen}
-          />
+          <StartupScreen initial={settings} onStart={onStart} />
         )}
-      </main>
-    </div>
+      </div>
+    </WindowFrame>
   );
 }

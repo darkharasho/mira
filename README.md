@@ -29,11 +29,11 @@ Validated on Bazzite (Fedora) + KDE Plasma + Wayland with an Elgato Game Capture
 ### Sub-30ms capture latency
 Mira drives mpv via IPC and routes audio through a custom dsnoop ALSA wrapper, bypassing PulseAudio's buffering. Frames hit the screen with the same responsiveness you'd get from a hardware monitor pass-through.
 
-### Dark Glass control surface
-The Tauri window is a transparent overlay — floating pill bar, slide-in settings panel, live stats overlay — layered above the video. Controls fade out 2.5 seconds after your mouse stops moving and snap back the instant you nudge it.
+### Glass controls, edge-to-edge video
+The video fills the entire window. Move the mouse and frosted-glass chrome fades in over it — a status bar with live stats, a floating control dock, a settings sheet — then disappears (cursor included) 2.5 seconds after you stop. The frost is real: KWin blurs the video behind each panel via `_KDE_NET_WM_BLUR_BEHIND_REGION`. Drag anywhere to move the window, drag an edge to resize.
 
-### Position-locked sibling video window
-mpv runs as a borderless sibling window, geometry-tracked to the Tauri shell via a one-shot KWin script. Move the window, the video moves with it. The two look like one for normal use; embedded subsurface rendering is on the roadmap.
+### Embedded video, overlaid UI
+mpv renders into an X11 child of the main window, which covers it edge to edge. The UI lives in a second, transparent window kept on top of main (transient-for, so it never floats above other apps) and following every move and resize.
 
 ### Hot-pluggable devices
 Unplug the Elgato or reload `uvcvideo` and the device dropdowns update without a restart. Pixel formats and ALSA capture sources are enumerated live from v4l2 and ALSA.
@@ -130,7 +130,7 @@ Vite-only commands (`npm run dev`, `npm run build`) run on the host — they don
 
 ## Known limitations
 
-- **Two windows.** mpv runs as a sibling top-level window position-locked to the Tauri window. Brief geometry mismatch on rapid drag/resize is possible. Embedded subsurface rendering is deferred.
+- **Two windows.** The UI overlay is a separate window that tracks main, so it can trail by a frame during a fast drag or resize. Glass blur needs KWin's Blur effect; elsewhere the panels fall back to a dark tint.
 - **KWin scripting is best-effort.** The `keepBelow` + `noBorder` script runs once ~1.5s after Tauri startup. If you click Start later than that, the mpv window may briefly appear above — toggle Apply in Settings to nudge the script.
 - **Fallback script.** The `~/.local/bin/elgato-capture.sh` workflow remains untouched and works as a backup if the app misbehaves.
 

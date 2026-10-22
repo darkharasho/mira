@@ -1,12 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useStream } from "../hooks/useStream";
 import { useHotkeys } from "../hooks/useHotkeys";
 import { useDevices } from "../hooks/useDevices";
 import { useStats } from "../hooks/useStats";
+import { useAutoHide } from "../hooks/useAutoHide";
+import { useBlurRegion } from "../hooks/useBlurRegion";
 import { SettingsPanel } from "../components/SettingsPanel";
+import { WindowFrame } from "../components/WindowFrame";
+import { WindowControls } from "../components/WindowControls";
+import { MiraMark } from "../components/MiraMark";
 import {
   setMute as ipcSetMute,
-  setVideoRegion,
   setVolume as ipcSetVolume,
   takeScreenshot,
 } from "../lib/ipc";
@@ -23,11 +27,10 @@ import {
 } from "@phosphor-icons/react";
 import { findVideoDevice, parseCaptureMode, type Settings } from "../lib/types";
 
-/// Single-window viewer. The mpv X11 child window is reparented into our
-/// Tauri toplevel and sized to the `videoSlotRef` rectangle — i.e. the
-/// middle band, leaving the top status bar and bottom control pill clear.
-/// X11 children stack above the WebKit widget in the same toplevel, so
-/// chrome MUST live outside the video rectangle to be visible.
+/// Viewer chrome. Renders in the transparent overlay window that sits on
+/// top of main, where mpv's video fills the entire window. The chrome
+/// stays out of the way until the pointer moves, then fades in as glass
+/// panels that KWin blurs against the video underneath.
 export function ViewerScreen({
   settings,
   onChangeSettings,
@@ -44,39 +47,8 @@ export function ViewerScreen({
   const { state, error, start, stop } = useStream();
   const { devices, loading: devicesLoading } = useDevices();
   const stats = useStats();
-  const videoSlotRef = useRef<HTMLDivElement | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-
-  useEffect(() => {
-    const el = videoSlotRef.current;
-    if (!el) return;
-    const push = () => {
-      const r = el.getBoundingClientRect();
-      setVideoRegion(
-        Math.max(1, Math.round(r.width)),
-        Math.max(1, Math.round(r.height)),
-        Math.round(r.left),
-        Math.round(r.top),
-      ).catch(() => {});
-    };
-    push();
-    const ro = new ResizeObserver(push);
-    ro.observe(el);
-    window.addEventListener("resize", push);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", push);
-    };
-  }, []);
-
-  // X11 child windows stack above the WebKit widget, so the settings
-  // panel would render *behind* mpv if we left the video slot full
-  // width. Instead, when the panel opens, shrink the video slot via
-  // right padding equal to the panel width — the ResizeObserver above
-  // pushes the new geometry to mpv and the panel becomes visible in
-  // the carved-out space. Avoids unmap/remap cycles that break xv VO.
-  const PANEL_WIDTH = 360;
 
   useEffect(() => {
     if (!toast) return;
@@ -162,7 +134,8 @@ export function ViewerScreen({
     q: onQuit,
     f: onToggleFullscreen,
     escape: () => {
-      if (fullscreen) onToggleFullscreen();
+      if (panelOpen) setPanelOpen(false);
+      else if (fullscreen) onToggleFullscreen();
     },
   });
 
@@ -172,16 +145,85 @@ export function ViewerScreen({
       : state === "error" ? "error"
       : "idle";
 
-  const muteIcon = settings.muted ? (
-    <SpeakerSlash size={28} weight="regular" color="url(#miraIconStroke)" />
-  ) : (
-    <SpeakerHigh size={28} weight="regular" color="url(#miraIconStroke)" />
-  );
+  const live = status === "running";
+  const [hoveringChrome, setHoveringChrome] = useState(false);
+  const shown = useAutoHide(2500, panelOpen || hoveringChrome || !live || deviceMissing);
+  const glass = shown ? "on" : "off";
+  useBlurRegion();
+
+  const hover = {
+    onMouseEnter: () => setHoveringChrome(true),
+    onMouseLeave: () => setHoveringChrome(false),
+  };
+  const fade = `transition-opacity duration-300 ease-glass ${shown ? "opacity-100" : "opacity-0 pointer-events-none"}`;
+  const iconProps = { size: 20, weight: "regular" as const, color: "url(#miraIconStroke)" };
 
   return (
-    <div className="h-full flex flex-col relative">
+    <WindowFrame resizable={!fullscreen} style={{ cursor: shown ? undefined : "none" }}>
+      {/* Edge scrims keep the chrome legible over bright frames. */}
+      <div
+        className={`absolute inset-0 pointer-events-none ${fade}`}
+        style={{
+          background:
+            "linear-gradient(180deg, rgb(4 5 10 / 0.5) 0, transparent 90px), linear-gradient(0deg, rgb(4 5 10 / 0.55) 0, transparent 130px)",
+        }}
+      />
+
+      {!live && (
+        <div className="absolute inset-0 grid place-items-center pointer-events-none">
+          <div className="flex flex-col items-center gap-3 text-sm text-zinc-400">
+            <MiraMark className={`w-10 h-10 ${status === "starting" ? "animate-pulse" : "opacity-60"}`} />
+            {deviceMissing
+              ? "No capture device"
+              : status === "starting"
+              ? "Connecting to capture device…"
+              : status === "error"
+              ? "Stream stopped"
+              : "Idle"}
+          </div>
+        </div>
+      )}
+
+      {/* Top bar: identity + live status + stats on the left, window
+          controls on the right. Bare areas drag the window. */}
+      <div className={`absolute top-3 left-3 right-3 flex items-start justify-between gap-3 ${fade}`}>
+        <div
+          {...hover}
+          data-glass={glass}
+          className="glass flex items-center gap-2.5 h-9 pl-2.5 pr-4 rounded-xl text-[12.5px] min-w-0"
+        >
+          <MiraMark className="w-4 h-4 shrink-0" />
+          <span className="font-semibold tracking-tight">Mira</span>
+          <Sep />
+          <StatusDot status={status} />
+          <span className="text-white/60 truncate">{device?.name ?? "No device"}</span>
+          {settings.show_stats && stats && live && (
+            <>
+              <Sep />
+              <span className="font-mono text-[11px] text-white/75 tabular-nums whitespace-nowrap">
+                {stats.width}×{stats.height} · {stats.fps.toFixed(1)} fps
+                {stats.pix_fmt && ` · ${stats.pix_fmt}`} ·{" "}
+                <span className={stats.frame_drops > 0 ? "text-warn" : "text-accent"}>
+                  {stats.frame_drops} drops
+                </span>
+              </span>
+            </>
+          )}
+        </div>
+        {!fullscreen && (
+          <div {...hover}>
+            <WindowControls glass={glass} />
+          </div>
+        )}
+      </div>
+
       {(error || deviceMissing) && (
-        <div className="mx-4 mt-3 mb-2 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-warn flex items-start gap-2 z-10">
+        <div
+          data-no-drag
+          data-glass="on"
+          className="glass absolute top-16 left-1/2 -translate-x-1/2 max-w-[min(560px,80%)] z-20
+                     rounded-2xl px-4 py-3 text-xs text-warn flex items-start gap-2.5"
+        >
           <Warning size={16} weight="regular" color="url(#miraIconWarn)" className="mt-0.5 shrink-0" />
           <div className="flex-1">
             <div className="font-mono leading-snug">
@@ -196,85 +238,53 @@ export function ViewerScreen({
         </div>
       )}
 
-      {/* Video slot — mpv's X11 child is sized to this rectangle. When
-          the settings panel is open we shrink it so mpv carves out the
-          panel's column instead of covering it. */}
+      {/* Bottom dock. */}
       <div
-        ref={videoSlotRef}
-        style={{ marginRight: panelOpen ? PANEL_WIDTH + 16 : undefined }}
-        className="flex-1 min-h-0 bg-black ml-4 mr-4 rounded-lg overflow-hidden relative transition-[margin] duration-250">
-        {status !== "running" && (
-          <div className="absolute inset-0 grid place-items-center text-xs text-zinc-600 pointer-events-none">
-            {deviceMissing
-              ? "No capture device"
-              : status === "starting"
-              ? "Connecting to capture device…"
-              : status === "error"
-              ? "Stream stopped"
-              : "Idle"}
-          </div>
-        )}
-      </div>
-
-      {/* Bottom control strip. No pill background — icons sit on the dark
-          frame so the gradient glyphs have room to breathe. */}
-      <div className="h-20 relative flex items-center justify-center shrink-0 z-10">
-        <div className="flex items-center gap-3">
-          <PillBtn onClick={onScreenshot} title="Screenshot (P)">
-            <Camera size={28} weight="regular" color="url(#miraIconStroke)" />
-          </PillBtn>
-          <PillBtn onClick={onToggleStats} title="Toggle stats (S)" active={settings.show_stats}>
-            <ChartBar size={28} weight="regular" color="url(#miraIconStroke)" />
-          </PillBtn>
-          <span className="w-px h-6 bg-white/10" />
-          <div className="group/vol flex items-center">
-            <div className="overflow-hidden flex items-center
-                            w-0 group-hover/vol:w-44
-                            opacity-0 group-hover/vol:opacity-100
-                            transition-all duration-200 ease-out">
-              <span className="text-[10px] font-mono text-zinc-400 w-8 text-right tabular-nums select-none mr-2">
-                {settings.volume}
-              </span>
-              <input
-                type="range"
-                min={0}
-                max={150}
-                value={settings.volume}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  onChangeSettings({ volume: v });
-                  ipcSetVolume(v).catch(() => {});
-                }}
-                className="w-32 accent-accent mr-2"
-              />
-            </div>
-            <PillBtn
-              onClick={onMute}
-              title={settings.muted ? "Unmute (M)" : "Mute (M)"}
-            >
-              {muteIcon}
-            </PillBtn>
-          </div>
-          <span className="w-px h-6 bg-white/10" />
-          <PillBtn
-            onClick={onToggleFullscreen}
-            title={fullscreen ? "Exit fullscreen (F / Esc)" : "Fullscreen (F)"}
-            active={fullscreen}
-          >
-            {fullscreen
-              ? <CornersIn size={28} weight="regular" color="url(#miraIconStroke)" />
-              : <CornersOut size={28} weight="regular" color="url(#miraIconStroke)" />}
-          </PillBtn>
-          <PillBtn onClick={() => setPanelOpen(true)} title="Settings">
-            <GearSix size={28} weight="regular" color="url(#miraIconStroke)" />
-          </PillBtn>
-        </div>
-        {settings.show_stats && stats && status === "running" && (
-          <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-mono text-zinc-400
-                           tabular-nums select-none whitespace-nowrap pointer-events-none">
-            {stats.width}×{stats.height} · {stats.fps.toFixed(1)}fps · {stats.frame_drops} drops
+        {...hover}
+        data-glass={glass}
+        data-no-drag
+        className={`glass absolute left-1/2 bottom-4 -translate-x-1/2 z-20 flex items-center gap-1 p-1.5 rounded-[14px] ${fade}`}
+      >
+        <DockBtn onClick={onMute} title={settings.muted ? "Unmute (M)" : "Mute (M)"} active={settings.muted}>
+          {settings.muted ? <SpeakerSlash {...iconProps} /> : <SpeakerHigh {...iconProps} />}
+        </DockBtn>
+        <div className="flex items-center gap-2 pl-1 pr-3">
+          <input
+            type="range"
+            min={0}
+            max={150}
+            value={settings.volume}
+            aria-label="Volume"
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              onChangeSettings({ volume: v });
+              ipcSetVolume(v).catch(() => {});
+            }}
+            className="glass-range w-24"
+            style={{ "--fill": `${(settings.volume / 150) * 100}%` } as React.CSSProperties}
+          />
+          <span className="w-7 text-right text-[10px] font-mono text-white/55 tabular-nums">
+            {settings.volume}
           </span>
-        )}
+        </div>
+        <Sep tall />
+        <DockBtn onClick={onScreenshot} title="Screenshot (P)">
+          <Camera {...iconProps} />
+        </DockBtn>
+        <DockBtn onClick={onToggleStats} title="Stats (S)" active={settings.show_stats}>
+          <ChartBar {...iconProps} />
+        </DockBtn>
+        <DockBtn
+          onClick={onToggleFullscreen}
+          title={fullscreen ? "Exit fullscreen (F / Esc)" : "Fullscreen (F)"}
+          active={fullscreen}
+        >
+          {fullscreen ? <CornersIn {...iconProps} /> : <CornersOut {...iconProps} />}
+        </DockBtn>
+        <Sep tall />
+        <DockBtn onClick={() => setPanelOpen((o) => !o)} title="Settings" active={panelOpen}>
+          <GearSix {...iconProps} />
+        </DockBtn>
       </div>
 
       <SettingsPanel
@@ -283,22 +293,38 @@ export function ViewerScreen({
         devices={devices}
         settings={settings}
         onChange={onChangeSettings}
-        onApply={() => setPanelOpen(false)}
       />
 
       {toast && (
-        <div className="absolute left-1/2 -translate-x-1/2 bottom-24 px-4 py-2 rounded-full
-                        bg-zinc-950/95 border border-white/10 text-xs text-zinc-100
-                        shadow-[0_4px_12px_-4px_rgba(0,0,0,0.6)] z-30 max-w-[80%]
-                        truncate font-mono">
+        <div
+          data-glass="on"
+          className="glass absolute left-1/2 -translate-x-1/2 bottom-[84px] z-30 max-w-[80%]
+                     px-4 py-2 rounded-xl text-xs font-mono text-zinc-100 truncate pointer-events-none"
+        >
           {toast}
         </div>
       )}
-    </div>
+    </WindowFrame>
   );
 }
 
-function PillBtn({
+function Sep({ tall }: { tall?: boolean }) {
+  return <span className={`w-px shrink-0 bg-white/15 ${tall ? "h-6 mx-1" : "h-3.5"}`} />;
+}
+
+function StatusDot({ status }: { status: "running" | "starting" | "error" | "idle" }) {
+  const cls =
+    status === "running"
+      ? "bg-accent shadow-[0_0_0_3px_rgba(92,240,138,0.18),0_0_10px_#5cf08a]"
+      : status === "starting"
+      ? "bg-accent/60 animate-pulse"
+      : status === "error"
+      ? "bg-warn"
+      : "bg-white/30";
+  return <span className={`w-[7px] h-[7px] rounded-full shrink-0 ${cls}`} />;
+}
+
+function DockBtn({
   children,
   onClick,
   title,
@@ -310,30 +336,24 @@ function PillBtn({
   active?: boolean;
 }) {
   return (
-    <span className="relative group/tip inline-flex flex-col items-center">
+    <span className="relative group/tip inline-flex">
       <button
         onClick={onClick}
         aria-label={title}
         aria-pressed={active}
-        className="grid place-items-center w-11 h-11 rounded-full transition-all duration-150
-                   active:scale-90 hover:bg-white/10 hover:scale-110"
+        className={`grid place-items-center w-10 h-10 rounded-[10px] transition-all duration-150
+                    active:scale-90 hover:bg-white/12 hover:-translate-y-px
+                    ${active ? "bg-white/14 shadow-[inset_0_1px_0_rgba(255,255,255,0.15)]" : ""}`}
       >
         {children}
       </button>
       <span
-        aria-hidden
-        className={`pointer-events-none absolute -bottom-1.5 h-[3px] rounded-full bg-accent
-                    shadow-[0_0_8px_rgba(92,240,138,0.7)]
-                    transition-all duration-200
-                    ${active ? "w-4 opacity-100" : "w-0 opacity-0"}`}
-      />
-      <span className="absolute -top-5 left-1/2 -translate-x-1/2 px-2 py-0 rounded
-                       bg-zinc-950/95 border border-white/15
-                       text-[10px] font-medium text-white whitespace-nowrap leading-4
-                       opacity-0 group-hover/tip:opacity-100
-                       translate-y-0.5 group-hover/tip:translate-y-0
-                       transition-all duration-150 pointer-events-none z-50
-                       shadow-[0_6px_20px_-4px_rgba(0,0,0,0.8)]">
+        className="absolute -top-9 left-1/2 -translate-x-1/2 px-2 py-1 rounded-lg
+                   bg-zinc-950/90 border border-white/10
+                   text-[10px] font-medium text-white whitespace-nowrap leading-none
+                   opacity-0 group-hover/tip:opacity-100 transition-opacity duration-150
+                   pointer-events-none"
+      >
         {title}
       </span>
     </span>

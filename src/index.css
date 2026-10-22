@@ -11,18 +11,71 @@
   --color-accent: #5cf08a;
   --color-warn: #f0b35c;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --ease-glass: cubic-bezier(0.22, 0.8, 0.24, 1);
 }
 
 html, body, #root {
   height: 100%;
   margin: 0;
   color-scheme: dark;
-  background: radial-gradient(ellipse at top, #1a1d28 0%, #0a0c14 60%, #06070b 100%);
-  color: #e8eaf2;
+  color: #eef0f6;
 }
+
+/* main is just the black backdrop behind mpv. The overlay is transparent
+   so the video shows through everywhere the UI doesn't draw. */
+html[data-window="main"], html[data-window="main"] body { background: #000; }
+html[data-window="overlay"], html[data-window="overlay"] body { background: transparent; }
 
 *, *::before, *::after { box-sizing: border-box; }
 
 select {
   color-scheme: dark;
 }
+
+/* Glass surface. The frost itself comes from KWin's blur effect via
+   _KDE_NET_WM_BLUR_BEHIND_REGION (see useBlurRegion) — CSS
+   backdrop-filter can't see mpv's pixels in the window below. The tint
+   stays dark enough to read over bright frames when blur is disabled. */
+.glass {
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 0.09), rgb(255 255 255 / 0.02)),
+    rgb(14 16 24 / 0.46);
+  border: 1px solid rgb(255 255 255 / 0.12);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.16),
+    inset 0 -1px 0 rgb(0 0 0 / 0.2),
+    0 12px 40px -12px rgb(0 0 0 / 0.6);
+}
+
+/* Opaque-surface variant of the same look, for the startup screen where
+   there's no video underneath. */
+.glass-solid {
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 0.07), rgb(255 255 255 / 0.015)),
+    rgb(18 20 28 / 0.9);
+  border: 1px solid rgb(255 255 255 / 0.1);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12), 0 24px 60px -20px rgb(0 0 0 / 0.8);
+}
+
+.glass-range {
+  appearance: none;
+  height: 16px;
+  background: transparent;
+  cursor: pointer;
+}
+.glass-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #fff var(--fill, 50%), rgb(255 255 255 / 0.18) var(--fill, 50%));
+}
+.glass-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.45);
+  transition: transform 0.15s;
+}
+.glass-range:hover::-webkit-slider-thumb { transform: scale(1.2); }

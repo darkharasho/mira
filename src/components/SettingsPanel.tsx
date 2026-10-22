@@ -27,14 +27,12 @@ export function SettingsPanel({
   devices,
   settings,
   onChange,
-  onApply,
 }: {
   open: boolean;
   onClose: () => void;
   devices: DeviceList;
   settings: Settings;
   onChange: (patch: Partial<Settings>) => void;
-  onApply: () => void;
 }) {
   useEffect(() => {
     if (!open) return;
@@ -85,18 +83,30 @@ export function SettingsPanel({
 
   return (
     <>
-      <div
-        className={`absolute inset-0 bg-black transition-opacity duration-200 z-30
-                    ${open ? "opacity-30" : "opacity-0 pointer-events-none"}`}
-        onClick={onClose}
-      />
+      {/* Click-away catcher; transparent so the video stays clear. */}
+      {open && <div data-no-drag className="absolute inset-0 z-30" onClick={onClose} />}
+      {/* Opacity-only transition: KWin's blur region can't follow a
+          moving panel, so the sheet fades in place. */}
       <aside
-        className={`absolute top-0 right-0 h-full w-[360px] bg-glass backdrop-blur-2xl
-                    border-l border-white/10 p-5 transition-transform duration-250 z-40
-                    ${open ? "translate-x-0" : "translate-x-full"}`}
-        style={{ transitionTimingFunction: "cubic-bezier(.2,.8,.2,1)" }}
+        data-glass={open ? "on" : "off"}
+        data-no-drag
+        className={`glass absolute top-16 right-3 bottom-24 w-[340px] rounded-2xl z-40
+                    flex flex-col transition-opacity duration-200 ease-glass
+                    ${open ? "opacity-100" : "opacity-0 pointer-events-none"}`}
       >
-        <h2 className="text-sm font-semibold text-white/90 mb-4">Settings</h2>
+        <header className="flex items-center justify-between px-5 pt-4 pb-3">
+          <h2 className="text-sm font-semibold text-white/90">Settings</h2>
+          <button
+            onClick={onClose}
+            title="Close (Esc)"
+            className="grid place-items-center w-7 h-7 rounded-full text-zinc-400 hover:text-white hover:bg-white/10 transition-colors"
+          >
+            <svg viewBox="0 0 12 12" className="w-3 h-3" fill="none">
+              <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            </svg>
+          </button>
+        </header>
+        <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-5">
         <div className="space-y-4">
           <DevicePicker
             label="Video device"
@@ -135,14 +145,17 @@ export function SettingsPanel({
             ]}
           />
           <label className="block">
-            <span className="text-xs uppercase tracking-wider text-white/50">Volume</span>
+            <span className="flex justify-between text-[10px] uppercase tracking-[0.14em] text-white/45 font-medium">
+              Volume <span className="font-mono normal-case tracking-normal">{settings.volume}</span>
+            </span>
             <input
               type="range"
               min={0}
               max={150}
               value={settings.volume}
               onChange={(e) => onChange({ volume: Number(e.target.value) })}
-              className="w-full mt-1"
+              className="glass-range w-full mt-1.5"
+              style={{ "--fill": `${(settings.volume / 150) * 100}%` } as React.CSSProperties}
             />
           </label>
           <Toggle
@@ -156,7 +169,7 @@ export function SettingsPanel({
             onChange={(v) => onChange({ skip_startup: v })}
           />
 
-          <div className="pt-2 border-t border-white/5">
+          <div className="pt-3 border-t border-white/10">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[10px] uppercase tracking-[0.14em] text-zinc-400 font-medium">
                 Updates
@@ -172,20 +185,6 @@ export function SettingsPanel({
             />
           </div>
         </div>
-
-        <div className="absolute left-5 right-5 bottom-5 flex gap-2">
-          <button
-            onClick={onApply}
-            className="flex-1 rounded-lg bg-white/10 hover:bg-white/15 py-2 text-sm font-medium transition"
-          >
-            Apply
-          </button>
-          <button
-            onClick={onClose}
-            className="rounded-lg border border-white/10 hover:bg-white/5 px-3 py-2 text-sm transition"
-          >
-            Close
-          </button>
         </div>
       </aside>
     </>
@@ -267,9 +266,23 @@ function Toggle({
   onChange: (v: boolean) => void;
 }) {
   return (
-    <label className="flex items-center justify-between text-sm py-1">
+    <button
+      type="button"
+      role="switch"
+      aria-checked={value}
+      onClick={() => onChange(!value)}
+      className="w-full flex items-center justify-between text-sm py-1 text-left"
+    >
       <span className="text-white/80">{label}</span>
-      <input type="checkbox" checked={value} onChange={(e) => onChange(e.target.checked)} />
-    </label>
+      <span
+        className={`relative w-9 h-5 rounded-full transition-colors duration-200
+                    ${value ? "bg-accent shadow-[0_0_12px_rgba(92,240,138,0.35)]" : "bg-white/15"}`}
+      >
+        <span
+          className={`absolute top-0.5 w-4 h-4 rounded-full transition-all duration-200 ease-glass
+                      ${value ? "left-[18px] bg-zinc-950" : "left-0.5 bg-white"}`}
+        />
+      </span>
+    </button>
   );
 }

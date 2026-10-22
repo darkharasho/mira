@@ -67,18 +67,13 @@ pub fn take_screenshot(state: State<AppState>) -> Result<String, String> {
 #[tauri::command]
 pub fn default_settings() -> Settings { Settings::default() }
 
-/// Update the rectangle (in window-local CSS pixels) where mpv should
-/// render its embedded video. The webview measures its layout and calls
-/// this whenever the video region changes (initial mount + resize).
+/// Replace the overlay's KWin blur-behind region with these rounded
+/// rectangles (overlay-local CSS pixels). An empty list removes the blur.
 #[tauri::command]
-pub fn set_video_region(state: State<AppState>, w: u32, h: u32, x: i32, y: i32) {
-    state.backend.set_region(w, h, x, y);
-}
-
-/// Show or hide the embedded video. Called when the settings panel
-/// opens (false) or closes (true) so the panel can render without mpv
-/// stacking on top of it.
-#[tauri::command]
-pub fn set_video_visible(state: State<AppState>, visible: bool) {
-    state.backend.set_video_visible(visible);
+pub fn set_blur_region(
+    window: tauri::WebviewWindow,
+    blur: State<crate::blur::Blur>,
+    rects: Vec<crate::blur::BlurRect>,
+) {
+    blur.set_region(&window, &rects);
 }

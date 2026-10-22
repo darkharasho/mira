@@ -15,12 +15,12 @@ export function DevicePicker({
 }) {
   return (
     <label className="block">
-      <span className="text-[10px] uppercase tracking-[0.14em] text-zinc-400 font-medium">
+      <span className="text-[10px] uppercase tracking-[0.14em] text-white/45 font-medium">
         {label}
       </span>
       <div className="relative mt-1.5">
         <select
-          className="appearance-none w-full rounded-lg bg-zinc-900/80 border border-white/10
+          className="appearance-none w-full rounded-xl bg-white/[0.06] border border-white/10
                      px-3 py-2 pr-8 text-sm text-zinc-100
                      focus:outline-none focus:ring-1 focus:ring-accent/40 focus:border-accent/40
                      disabled:opacity-40 disabled:cursor-not-allowed
