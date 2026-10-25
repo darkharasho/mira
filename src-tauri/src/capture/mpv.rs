@@ -190,9 +190,23 @@ fn mpv_log_path() -> String {
 /// buffer that FFmpeg's hardcoded 524k-sample request can't bypass —
 /// without it, audio is permanently 1-2s behind real time.
 fn alsa_lowlatency_pcm(audio_device: &str) -> String {
-    match audio_device {
-        "hw:4,0" => "elgato_lowlatency".to_string(),
-        other => other.to_string(),
+    lowlatency_pcm_for(audio_device, |card| {
+        std::fs::read_to_string(format!("/proc/asound/card{card}/id"))
+            .ok()
+            .map(|id| id.trim().to_string())
+    })
+}
+
+/// Match on the alsa card id, not its index: card numbers shift with
+/// plug order, and opening the raw hw device brings the lag back.
+fn lowlatency_pcm_for(audio_device: &str, card_id: impl Fn(&str) -> Option<String>) -> String {
+    let card = audio_device
+        .strip_prefix("hw:")
+        .and_then(|rest| rest.split_once(','))
+        .map(|(card, _)| card);
+    match card.and_then(card_id).as_deref() {
+        Some("Neo") => "elgato_lowlatency".to_string(),
+        _ => audio_device.to_string(),
     }
 }
 
@@ -567,6 +581,19 @@ mod tests {
             volume: 100,
             muted: false,
         }
+    }
+
+    #[test]
+    fn elgato_maps_to_lowlatency_pcm_on_any_card_number() {
+        for hw in ["hw:4,0", "hw:5,0"] {
+            assert_eq!(lowlatency_pcm_for(hw, |_| Some("Neo".into())), "elgato_lowlatency");
+        }
+    }
+
+    #[test]
+    fn other_cards_open_hw_directly() {
+        assert_eq!(lowlatency_pcm_for("hw:4,0", |_| Some("Gen".into())), "hw:4,0");
+        assert_eq!(lowlatency_pcm_for("hw:9,0", |_| None), "hw:9,0");
     }
 
     #[test]
