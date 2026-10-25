@@ -2039,7 +2039,7 @@ dependencies = [
 
 [[package]]
 name = "mira"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "alsa",
  "anyhow",
