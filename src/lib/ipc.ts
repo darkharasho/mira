@@ -16,6 +16,7 @@ export const setBlurRegion = (rects: BlurRect[]) =>
   invoke<void>("set_blur_region", { rects });
 
 export const refreshOverlay = () => invoke<void>("refresh_overlay");
+export const overlayLeavesStalePixels = () => invoke<boolean>("overlay_leaves_stale_pixels");
 
 export const onDevicesChanged = (cb: () => void) =>
   listen("devices-changed", () => cb());

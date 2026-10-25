@@ -151,7 +151,7 @@ export function ViewerScreen({
   const shown = useAutoHide(2500, panelOpen || hoveringChrome || !live || deviceMissing);
   const glass = shown ? "on" : "off";
   useBlurRegion();
-  useStalePixelRefresh();
+  const stalePixels = useStalePixelRefresh();
 
   const hover = {
     onMouseEnter: () => setHoveringChrome(true),
@@ -164,7 +164,7 @@ export function ViewerScreen({
     <WindowFrame resizable={!fullscreen} style={{ cursor: shown ? undefined : "none" }}>
       {/* Edge scrims keep the chrome legible over bright frames. */}
       <div
-        className={`absolute inset-0 pointer-events-none ${fade}`}
+        className={`absolute inset-0 pointer-events-none ${stalePixels ? (shown ? "" : "opacity-0") : fade}`}
         style={{
           background:
             "linear-gradient(180deg, rgb(4 5 10 / 0.5) 0, transparent 90px), linear-gradient(0deg, rgb(4 5 10 / 0.55) 0, transparent 130px)",

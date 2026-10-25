@@ -58,6 +58,7 @@ fn main() {
             commands::default_settings,
             commands::set_blur_region,
             commands::refresh_overlay,
+            commands::overlay_leaves_stale_pixels,
         ])
         .setup(move |app| {
             crate::hotplug::spawn(app.handle().clone());

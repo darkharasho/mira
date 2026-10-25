@@ -94,3 +94,10 @@ pub fn refresh_overlay(window: tauri::WebviewWindow) {
         let _ = window.set_size(size);
     });
 }
+
+/// Whether translucent fades smear on this WebKit, so the UI can snap
+/// them instead.
+#[tauri::command]
+pub fn overlay_leaves_stale_pixels() -> bool {
+    crate::webkit_leaves_stale_pixels()
+}
